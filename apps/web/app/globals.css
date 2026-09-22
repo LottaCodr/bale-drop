@@ -1,0 +1,79 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/**
+ * Bale Drop design tokens (shadcn CSS-variable pattern).
+ * Light = warm paper + bale green + hustle amber. All components MUST use
+ * these semantic tokens — never hardcode hex in components.
+ */
+@layer base {
+  :root {
+    --background: 40 33% 97%;
+    --foreground: 160 25% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 160 25% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 160 25% 10%;
+    --primary: 160 68% 27%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 40 30% 90%;
+    --secondary-foreground: 160 25% 14%;
+    --muted: 40 20% 92%;
+    --muted-foreground: 160 10% 38%;
+    --accent: 38 95% 52%;
+    --accent-foreground: 30 60% 12%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 40 18% 86%;
+    --input: 40 18% 80%;
+    --ring: 160 68% 27%;
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 160 22% 7%;
+    --foreground: 40 20% 95%;
+    --card: 160 20% 10%;
+    --card-foreground: 40 20% 95%;
+    --popover: 160 20% 10%;
+    --popover-foreground: 40 20% 95%;
+    --primary: 160 60% 42%;
+    --primary-foreground: 160 25% 8%;
+    --secondary: 160 15% 16%;
+    --secondary-foreground: 40 20% 92%;
+    --muted: 160 15% 15%;
+    --muted-foreground: 40 12% 65%;
+    --accent: 38 95% 55%;
+    --accent-foreground: 30 60% 10%;
+    --destructive: 0 65% 55%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 160 15% 18%;
+    --input: 160 15% 24%;
+    --ring: 160 60% 42%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "ss01", "cv11";
+  }
+  ::selection {
+    background: hsl(var(--primary) / 0.2);
+  }
+  /* Refined scrollbar for horizontal rails */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}

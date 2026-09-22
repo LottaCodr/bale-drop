@@ -1,0 +1,69 @@
+{
+  "version": "5",
+  "specifiers": {
+    "jsr:@deno/installer-shell-setup@*": "0.3.4"
+  },
+  "jsr": {
+    "@deno/installer-shell-setup@0.3.4": {
+      "integrity": "48665d1a737d487cce6874bc97bba70a5aeffa7053aca3f60df93c6fab8963b4"
+    }
+  },
+  "redirects": {
+    "https://esm.sh/@supabase/supabase-js@2": "https://esm.sh/@supabase/supabase-js@2.117.0",
+    "https://esm.sh/iceberg-js@^0.8.1?target=denonext": "https://esm.sh/iceberg-js@0.8.1?target=denonext"
+  },
+  "remote": {
+    "https://esm.sh/@supabase/auth-js@2.117.0/denonext/auth-js.mjs": "729ce9ead69e0ef44a09bb068daa3900cea1ae0135ba451b12cda87fa20d3f5a",
+    "https://esm.sh/@supabase/functions-js@2.117.0/denonext/functions-js.mjs": "2191e601c9183afd6e22e9db0300af988679533dd0ce1737244395f9f58a2e34",
+    "https://esm.sh/@supabase/phoenix@0.4.5/denonext/phoenix.mjs": "40bd2a70829cd847848baac58e635bacd83fd62188f6624b44e2c295341004eb",
+    "https://esm.sh/@supabase/postgrest-js@2.117.0/denonext/postgrest-js.mjs": "c335a979f2ea7ee306b99c8f51b7fed0e822a532c5faf358e6165341166d613d",
+    "https://esm.sh/@supabase/realtime-js@2.117.0/denonext/realtime-js.mjs": "35c4a228519d02d8588ed53968d7723df65792a8071e0e36c93fc587fe009cb7",
+    "https://esm.sh/@supabase/storage-js@2.117.0/denonext/storage-js.mjs": "c61b2100732f1865470546136a468c31a835ad2ecdbf9bb0bf583dc41bd0b5fb",
+    "https://esm.sh/@supabase/supabase-js@2.117.0": "52358cc08fc0a25278a2be371821c2eb1fa5c615ba76dbca43a01b2d122f0201",
+    "https://esm.sh/@supabase/supabase-js@2.117.0/denonext/dist/tracingRegistry.mjs": "ce536725dd13107702f9750d2307f05e739b9029f7c66bc48c50c0c487148e56",
+    "https://esm.sh/@supabase/supabase-js@2.117.0/denonext/supabase-js.mjs": "97457acf8f4453ecdeecd6f7f6a31a1d93532e8968364373659d6f7be3002743",
+    "https://esm.sh/iceberg-js@0.8.1/denonext/iceberg-js.mjs": "d839d81a2e3966500ca2cdd0c1cb458e9608bacfc91f7bb67a69b2e878dcdb4f",
+    "https://esm.sh/iceberg-js@0.8.1?target=denonext": "58c849d7fe2bf4eca4a84eb501e83c161a7d8c34ca1bec15a962b3bec3062633",
+    "https://esm.sh/tslib@2.8.1/denonext/tslib.mjs": "c38da5dd6da6281964435002ce204cd586634fe3bdfb24a0ee116f48cf3292e9"
+  },
+  "workspace": {
+    "members": {
+      "apps/web": {
+        "packageJson": {
+          "dependencies": [
+            "npm:@bale-drop/database@*",
+            "npm:@radix-ui/react-slot@^1.1.0",
+            "npm:@supabase/ssr@~0.12.7",
+            "npm:@supabase/supabase-js@^2.45.0",
+            "npm:@types/node@20",
+            "npm:@types/react-dom@19",
+            "npm:@types/react@19",
+            "npm:autoprefixer@^10.4.20",
+            "npm:class-variance-authority@0.7",
+            "npm:clsx@^2.1.1",
+            "npm:eslint-config-next@^15.1.0",
+            "npm:eslint@^8.57.0",
+            "npm:lucide-react@0.454",
+            "npm:next@^15.1.0",
+            "npm:postcss@^8.4.49",
+            "npm:react-dom@19",
+            "npm:react@19",
+            "npm:tailwind-merge@^2.5.0",
+            "npm:tailwindcss@^3.4.0",
+            "npm:typescript@^5.6.0",
+            "npm:zod@^3.23.0"
+          ]
+        }
+      },
+      "packages/database": {
+        "packageJson": {
+          "dependencies": [
+            "npm:@supabase/ssr@~0.12.7",
+            "npm:@supabase/supabase-js@^2.45.0",
+            "npm:typescript@^5.6.0"
+          ]
+        }
+      }
+    }
+  }
+}
