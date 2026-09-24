@@ -154,9 +154,70 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["promo_codes"]["Insert"]>;
         Relationships: [];
       };
+      /** Saved products (migration 0018). Owner-only RLS. */
+      wishlists: {
+        Row: { id: string; profile_id: string; product_id: string; created_at: string };
+        Insert: { id?: string; profile_id: string; product_id: string; created_at?: string };
+        Update: Partial<Database["public"]["Tables"]["wishlists"]["Insert"]>;
+        Relationships: [];
+      };
+      /** First-party funnel events (migration 0018). Insert-only for clients. */
+      analytics_events: {
+        Row: {
+          id: string;
+          profile_id: string | null;
+          session_id: string;
+          event_name: string;
+          props: Json;
+          path: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          profile_id?: string | null;
+          session_id: string;
+          event_name: string;
+          props?: Json;
+          path?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["analytics_events"]["Insert"]>;
+        Relationships: [];
+      };
+      /** Buyer/vendor support threads (migration 0020). Guests may insert. */
+      support_messages: {
+        Row: {
+          id: string;
+          profile_id: string | null;
+          name: string;
+          email: string;
+          topic: string;
+          body: string;
+          order_ref: string | null;
+          status: string;
+          created_at: string;
+          resolved_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          profile_id?: string | null;
+          name: string;
+          email: string;
+          topic?: string;
+          body: string;
+          order_ref?: string | null;
+          status?: string;
+          created_at?: string;
+          resolved_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["support_messages"]["Insert"]>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
+      mark_notification_read: { Args: { p_id: string }; Returns: undefined };
+      mark_all_notifications_read: { Args: Record<string, never>; Returns: number };
       claim_bale_slot: {
         Args: { p_bale_id: string };
         Returns: Json;

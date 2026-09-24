@@ -9,7 +9,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { supabaseBrowser } from "@/lib/supabase";
 import { isSupabaseLive } from "@/lib/config";
-import { CITIES } from "@/lib/mock";
+import { CITIES } from "@/lib/taxonomy";
 import { cn } from "@/lib/utils";
 
 /** Signup — metadata feeds the handle_new_user() trigger (role/name/phone/city). */

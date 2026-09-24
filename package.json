@@ -2,7 +2,7 @@
   "name": "bale-drop",
   "version": "0.1.0",
   "private": true,
-  "description": "Bale Drop — trusted Okirika commerce + Bale Split (group buy). Monorepo.",
+  "description": "Bale Drop \u2014 trusted Okirika commerce + Bale Split (group buy). Monorepo.",
   "workspaces": [
     "apps/*",
     "packages/*"
@@ -12,7 +12,10 @@
     "build": "npm run build --workspace apps/web",
     "lint": "npm run lint --workspace apps/web",
     "typecheck": "npm run typecheck --workspace apps/web",
-    "typecheck:edge": "deno check --no-config supabase/functions/*/index.ts"
+    "typecheck:edge": "deno check --no-config supabase/functions/*/index.ts",
+    "test": "npm run test --workspace apps/web",
+    "icons": "node scripts/generate-icons.mjs",
+    "check": "npm run typecheck && npm run lint && npm run test"
   },
   "engines": {
     "node": ">=18.18"

@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Check, Info, Loader2, ShieldCheck, Truck, Upload } from "lucide-react";
+import { Check, Clock, Info, Loader2, Repeat, ShieldCheck, Truck, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -13,12 +13,23 @@ import { naira } from "@/lib/format";
 import { supabaseBrowser } from "@/lib/supabase";
 import { invokeOperation } from "@/lib/operations";
 import { ORDER_STEPS, ORDERS, type Order } from "@/lib/mock";
-import { hueFor, type Database } from "@bale-drop/database";
+import { useCartStore } from "@/lib/store/cart-store";
+import { track } from "@/lib/analytics";
+import { mapProductRow, hueFor, type Database } from "@bale-drop/database";
 import { cn } from "@/lib/utils";
 
 type OrderRow = Database["public"]["Tables"]["orders"]["Row"];
 type VendorRow = Database["public"]["Tables"]["vendor_profiles"]["Row"];
 type ItemRow = Database["public"]["Tables"]["order_items"]["Row"];
+
+type TimelineRow = { id: string; order_id: string; status: string; note: string | null; created_at: string };
+
+type OrderLine = {
+  productId: string | null;
+  title: string;
+  qty: number;
+  unit: number;
+};
 
 type ViewOrder = {
   id: string;
@@ -34,6 +45,10 @@ type ViewOrder = {
   trackingUrl?: string | null;
   step: number;
   hue: number;
+  /** Everything the buyer bought — needed for a truthful reorder. */
+  lines: OrderLine[];
+  /** Real status history; the 5-step bar is the summary, this is the detail. */
+  timeline: { status: string; note: string | null; at: string }[];
 };
 
 const STATUS_BADGE: Record<string, "amber" | "default" | "verified" | "live"> = {
@@ -68,13 +83,25 @@ function orderStep(status: OrderRow["status"], escrow: OrderRow["escrow_status"]
   return 0;
 }
 
-function toViewOrder(order: OrderRow, vendorName: string, item: ItemRow | undefined): ViewOrder {
+function toViewOrder(
+  order: OrderRow,
+  vendorName: string,
+  items: ItemRow[],
+  timeline: TimelineRow[]
+): ViewOrder {
+  const first = items[0];
+  const lines: OrderLine[] = items.map((item) => ({
+    productId: item.product_id,
+    title: item.title_snapshot,
+    qty: item.qty,
+    unit: item.unit_naira,
+  }));
   return {
     id: order.id,
-    title: item?.title_snapshot ?? "Bale Drop order",
+    title: first?.title_snapshot ?? "Bale Drop order",
     vendor: vendorName,
     vendorId: order.vendor_id,
-    productId: item?.product_id ?? null,
+    productId: first?.product_id ?? null,
     amount: order.total_naira,
     date: new Date(order.created_at).toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" }),
     status: order.status,
@@ -83,8 +110,25 @@ function toViewOrder(order: OrderRow, vendorName: string, item: ItemRow | undefi
     trackingUrl: order.tracking_url,
     step: orderStep(order.status, order.escrow_status),
     hue: hueFor(order.id),
+    lines,
+    timeline: timeline
+      .filter((entry) => entry.order_id === order.id)
+      .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at))
+      .map((entry) => ({ status: entry.status, note: entry.note, at: entry.created_at })),
   };
 }
+
+const TIMELINE_LABEL: Record<string, string> = {
+  pending_payment: "Order created — awaiting payment",
+  paid: "Payment received into escrow",
+  processing: "Vendor started packing your order",
+  ready: "Ready to ship",
+  in_transit: "Handed to the courier — tracking live",
+  delivered: "Delivered — confirm to release escrow",
+  disputed: "Dispute opened — escrow paused",
+  refunded: "Refunded to your payment method",
+  cancelled: "Order cancelled",
+};
 
 export function OrdersClient() {
   const live = isSupabaseLive();
@@ -117,8 +161,11 @@ export function OrdersClient() {
         status: order.status === "processing" ? "processing" : order.status === "in_transit" ? "in_transit" : "delivered",
         escrow: order.status === "delivered" ? "released" : "held",
         tracking: order.tracking,
+        trackingUrl: null,
         step: order.step,
         hue: order.hue,
+        lines: [{ productId: null, title: order.title, qty: 1, unit: order.amount }],
+        timeline: [],
       })));
       setLoading(false);
       return;
@@ -146,16 +193,32 @@ export function OrdersClient() {
       const orderRows = rows as OrderRow[];
       const orderIds = orderRows.map((row) => row.id);
       const vendorIds = [...new Set(orderRows.map((row) => row.vendor_id))];
-      const [{ data: vendors }, { data: items }, { data: reviews }] = await Promise.all([
+      const [{ data: vendors }, { data: items }, { data: reviews }, { data: timeline }] = await Promise.all([
         vendorIds.length ? sb.from("vendor_profiles").select("*").in("id", vendorIds) : Promise.resolve({ data: [] as VendorRow[] }),
         orderIds.length ? sb.from("order_items").select("*").in("order_id", orderIds) : Promise.resolve({ data: [] as ItemRow[] }),
         orderIds.length ? sb.from("reviews").select("order_id").in("order_id", orderIds) : Promise.resolve({ data: [] as { order_id: string }[] }),
+        orderIds.length
+          ? sb.from("order_timeline").select("id, order_id, status, note, created_at").in("order_id", orderIds)
+          : Promise.resolve({ data: [] as TimelineRow[] }),
       ]);
       if (!active) return;
       const vendorMap = new Map((vendors ?? []).map((vendor) => [vendor.id, vendor.shop_name]));
-      const itemMap = new Map<string, ItemRow>();
-      for (const item of items ?? []) if (!itemMap.has(item.order_id)) itemMap.set(item.order_id, item);
-      setOrders(orderRows.map((row) => toViewOrder(row, vendorMap.get(row.vendor_id) ?? "Verified vendor", itemMap.get(row.id))));
+      const itemsByOrder = new Map<string, ItemRow[]>();
+      for (const item of items ?? []) {
+        const bucket = itemsByOrder.get(item.order_id) ?? [];
+        bucket.push(item);
+        itemsByOrder.set(item.order_id, bucket);
+      }
+      setOrders(
+        orderRows.map((row) =>
+          toViewOrder(
+            row,
+            vendorMap.get(row.vendor_id) ?? "Verified vendor",
+            itemsByOrder.get(row.id) ?? [],
+            (timeline ?? []) as TimelineRow[]
+          )
+        )
+      );
       setReviewedOrders((reviews ?? []).map((review) => review.order_id));
       setLoading(false);
     }
@@ -196,6 +259,60 @@ export function OrdersClient() {
     if (actionError) { setError(actionError); return; }
     setNotice("Delivery confirmed. Escrow has been released and the vendor payout is queued.");
     setRefreshToken((value) => value + 1);
+  }
+
+  /**
+   * Reorder — the cheapest repeat purchase a marketplace can offer. Lines are
+   * priced immediately from the catalog where possible; the cart re-checks them
+   * again before payment, and `paystack-initialize` re-prices server-side, so a
+   * stale snapshot can never become a wrong charge.
+   */
+  async function reorder(order: ViewOrder) {
+    setError(null);
+    setNotice(null);
+    setActionBusy(`reorder-${order.id}`);
+    const add = useCartStore.getState().add;
+    let added = 0;
+    try {
+      const ids = order.lines.map((line) => line.productId).filter((id): id is string => Boolean(id));
+      const catalog = new Map<string, { title: string; price: number; city: string; category: string; grade: "A" | "B" | "C"; hue: number; vendorId: string }>();
+      if (ids.length > 0) {
+        if (live) {
+          const sb = supabaseBrowser();
+          const { data } = await sb.from("products").select("*").in("id", ids).eq("status", "active");
+          for (const row of data ?? []) {
+            const product = mapProductRow(row);
+            catalog.set(product.id, {
+              title: product.title,
+              price: product.price,
+              city: product.city,
+              category: product.category,
+              grade: product.grade,
+              hue: product.hue,
+              vendorId: product.vendorId,
+            });
+          }
+        }
+      }
+      for (const line of order.lines) {
+        const fresh = line.productId ? catalog.get(line.productId) : undefined;
+        if (!fresh) continue; // listing gone or paused — we say so below
+        add(
+          { productId: line.productId!, ...fresh, vendorName: order.vendor },
+          line.qty
+        );
+        added += 1;
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not reorder");
+    }
+    setActionBusy(null);
+    if (added === 0) {
+      setError("Those listings are no longer available. Browse similar items instead.");
+      return;
+    }
+    track("reorder", { order_id: order.id, items: added, value: order.amount });
+    setNotice(`${added} item${added === 1 ? "" : "s"} added to your cart — prices will be confirmed at checkout.`);
   }
 
   async function submitReview(order: ViewOrder) {
@@ -246,18 +363,32 @@ export function OrdersClient() {
     setRefreshToken((value) => value + 1);
   }
 
+  const activeOrders = useMemo(
+    () => orders.filter((order) => !["delivered", "refunded", "cancelled"].includes(order.status)),
+    [orders]
+  );
+
   return (
     <div className="container max-w-3xl py-6">
-      <h1 className="text-2xl font-extrabold tracking-tight">My orders</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Payment confirmation is webhook-driven. Escrow stays held until the delivery flow releases it.
-      </p>
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h1 className="text-2xl font-extrabold tracking-tight">My orders</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Payment confirmation is webhook-driven. Escrow stays held until you confirm delivery.
+          </p>
+        </div>
+        {orders.length > 0 && (
+          <p className="text-[13px] text-muted-foreground">
+            <b className="text-foreground">{activeOrders.length}</b> active • {orders.length - activeOrders.length} finished
+          </p>
+        )}
+      </div>
 
       {loading && <div className="mt-8 flex items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading orders…</div>}
       {error && <p role="alert" className="mt-6 rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</p>}
       {notice && <p role="status" className="mt-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200">{notice}</p>}
       {!loading && !error && orders.length === 0 && (
-        <Card className="mt-6 p-8 text-center"><h2 className="font-bold">No orders yet</h2><p className="mt-1 text-sm text-muted-foreground">Choose a listing and your paid orders will appear here.</p><Button className="mt-4" asChild><Link href="/#new">Browse listings</Link></Button></Card>
+        <Card className="mt-6 p-8 text-center"><h2 className="font-bold">No orders yet</h2><p className="mt-1 text-sm text-muted-foreground">Choose a listing and your paid orders will appear here.</p><Button className="mt-4" asChild><Link href="/search">Browse listings</Link></Button></Card>
       )}
 
       <div className="mt-6 flex flex-col gap-4">
@@ -290,6 +421,41 @@ export function OrdersClient() {
                   })}
                 </ol>
 
+                {order.timeline.length > 0 && (
+                  <details className="rounded-xl border bg-muted/30 px-3 py-2">
+                    <summary className="flex cursor-pointer items-center gap-2 text-[13px] font-semibold">
+                      <Clock className="h-3.5 w-3.5 text-primary" /> Status history ({order.timeline.length})
+                    </summary>
+                    <ol className="mt-2 space-y-2 border-l border-dashed pl-4 text-[13px]">
+                      {order.timeline.map((entry) => (
+                        <li key={`${entry.status}-${entry.at}`}>
+                          <p className="font-semibold">{TIMELINE_LABEL[entry.status] ?? entry.status}</p>
+                          <p className="text-muted-foreground">
+                            {new Date(entry.at).toLocaleString("en-NG", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                          </p>
+                          {entry.note && <p className="text-muted-foreground">{entry.note}</p>}
+                        </li>
+                      ))}
+                    </ol>
+                  </details>
+                )}
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => reorder(order)}
+                    disabled={actionBusy === `reorder-${order.id}` || order.lines.length === 0}
+                  >
+                    {actionBusy === `reorder-${order.id}` ? <Loader2 className="animate-spin" /> : <Repeat />} Buy again
+                  </Button>
+                  {order.productId && (
+                    <Button variant="ghost" size="sm" asChild>
+                      <Link href={`/listing/${order.productId}`}>View listing</Link>
+                    </Button>
+                  )}
+                </div>
+
                 {order.tracking && !isDemoConfirmed && <div className="flex items-center gap-2 rounded-xl bg-muted/60 px-3 py-2.5 text-sm"><Truck className="h-4 w-4 shrink-0 text-primary" /><span className="font-mono font-semibold">{order.tracking}</span>{order.trackingUrl ? <Button variant="link" size="sm" className="ml-auto h-auto p-0" asChild><a href={order.trackingUrl} target="_blank" rel="noreferrer">Track package</a></Button> : <span className="ml-auto text-xs text-muted-foreground">Tracking updates soon</span>}</div>}
 
                 {!live && !isDemoConfirmed && (
@@ -303,6 +469,7 @@ export function OrdersClient() {
                       <Button variant="outline" className="flex-1" onClick={() => setDisputeOrder(disputeOrder === order.id ? null : order.id)}><Info /> Open dispute</Button>
                     </div>
                     {order.status === "paid" && <p className="text-xs text-muted-foreground">Your vendor must begin fulfillment before delivery can be confirmed.</p>}
+                    <p className="text-xs text-muted-foreground">Ignore this and escrow auto-releases 48 hours after delivery — you can still open a dispute before then.</p>
                     {disputeOrder === order.id && <div className="rounded-xl border bg-muted/40 p-3"><label className="mb-1.5 block text-sm font-semibold" htmlFor={`reason-${order.id}`}>Reason</label><select id={`reason-${order.id}`} value={disputeReason} onChange={(event) => setDisputeReason(event.target.value)} className="h-10 w-full rounded-xl border border-input bg-background px-3 text-sm"><option>Item not as described</option><option>Order never arrived</option><option>Damaged or incomplete</option><option>Wrong item received</option></select><Textarea className="mt-2" placeholder="Tell us what happened" value={disputeDescription} onChange={(event) => setDisputeDescription(event.target.value)} /><label className="mt-2 flex cursor-pointer items-center gap-2 rounded-xl border border-dashed p-3 text-sm"><Upload className="h-4 w-4 text-primary" /><span>{evidenceFiles.length ? `${evidenceFiles.length} evidence file${evidenceFiles.length > 1 ? "s" : ""} selected` : "Attach photos or PDF evidence (optional)"}</span><input type="file" accept="image/*,.pdf" multiple className="sr-only" onChange={(event) => setEvidenceFiles(Array.from(event.target.files ?? []).slice(0, 5))} /></label><div className="mt-2 flex justify-end gap-2"><Button variant="ghost" size="sm" onClick={() => setDisputeOrder(null)}>Cancel</Button><Button size="sm" onClick={() => openDispute(order.id)} disabled={actionBusy === order.id}>{actionBusy === order.id ? "Opening…" : "Submit dispute"}</Button></div></div>}
                   </div>
                 )}

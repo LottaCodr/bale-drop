@@ -26,7 +26,7 @@ import { Stars } from "@/components/ui/stars";
 import { CompactCountdown } from "@/components/countdown";
 import { FavoriteButton } from "@/components/favorite-button";
 import { naira } from "@/lib/format";
-import { CATEGORIES } from "@/lib/mock";
+import { CATEGORIES } from "@/lib/taxonomy";
 import {
   slotPrice,
   slotsLeft,
@@ -143,11 +143,12 @@ export function CategoryPills() {
     <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 pb-1" role="list" aria-label="Categories">
       {CATEGORIES.map((cat, i) => {
         const Icon = CATEGORY_ICONS[cat] ?? Package;
+        const href = cat === "All" ? "/search" : `/search?category=${encodeURIComponent(cat)}`;
         return (
           <Link
             key={cat}
             role="listitem"
-            href="/#new"
+            href={href}
             aria-current={i === 0 ? "true" : undefined}
             className={cn(
               "flex shrink-0 items-center gap-2 rounded-full border px-4 py-2.5 text-sm font-semibold transition",
@@ -179,7 +180,7 @@ export function ProductCard({ product, vendor }: { product: Product; vendor: Ven
           <GradeBadge grade={product.grade} />
           {product.tag && <Badge variant="amber">{product.tag}</Badge>}
         </div>
-        <FavoriteButton className="absolute right-2.5 top-2.5" />
+        <FavoriteButton product={product} vendor={vendor} className="absolute right-2.5 top-2.5" />
       </div>
       <div className="flex flex-1 flex-col gap-1.5 p-3.5">
         <p className="line-clamp-2 text-sm font-semibold leading-snug group-hover:text-primary">{product.title}</p>
@@ -307,11 +308,16 @@ export function VendorCard({ vendor, productId }: { vendor: Vendor; productId?: 
           <span>{vendor.sales.toLocaleString()} sales</span>
         </div>
       </div>
-      {productId && (
-        <Button variant="outline" size="sm" asChild className="shrink-0">
-          <Link href={`/listing/${productId}`}>Shop</Link>
+      <span className="flex shrink-0 flex-col gap-2">
+        <Button variant="outline" size="sm" asChild>
+          <Link href={`/vendor/${vendor.id}`}>Visit shop</Link>
         </Button>
-      )}
+        {productId && (
+          <Button variant="ghost" size="sm" asChild>
+            <Link href={`/listing/${productId}`}>Latest listing</Link>
+          </Button>
+        )}
+      </span>
     </Card>
   );
 }
