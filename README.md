@@ -50,7 +50,7 @@ bale-drop/
 ## Backend setup
 
 See **[docs/SUPABASE-SETUP.md](docs/SUPABASE-SETUP.md)** — link the project →
-apply migrations `0001` through `0016` → add public keys → deploy the Edge
+apply migrations `0001` through `0017` → add public keys → deploy the Edge
 Functions and configure Paystack webhooks/cron jobs. Until then the app runs on
 the mock fallback dataset; no real money is collected.
 
