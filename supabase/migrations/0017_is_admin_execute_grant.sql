@@ -1,0 +1,23 @@
+-- Fix "permission denied for function is_admin" (SQLSTATE 42501) on public reads.
+--
+-- 0005 hardened the admin helper with:
+--     revoke all on function public.is_admin() from public, anon;
+--     grant execute on function public.is_admin() to authenticated, service_role;
+-- under the assumption that only authenticated clients would ever evaluate it.
+-- That assumption does not hold. RLS policy expressions run with the privileges
+-- of the role executing the query, and a security-definer call inside a policy
+-- is permission-checked when the query plan is initialized — even when another
+-- OR'd permissive policy (e.g. "vendors public approved" from 0001) would have
+-- accepted the row. PostgREST requests without a session run as anon, so every
+-- anon SELECT on a table carrying an is_admin() policy (vendor_profiles,
+-- products, profiles, orders, disputes, transactions, vendor_payouts,
+-- payment_sessions, admin_audit_log, fulfillment_events, order_refunds,
+-- bale_refunds, vendor_documents) failed before RLS could filter rows, and the
+-- storefront silently fell back to mock data.
+--
+-- Granting EXECUTE to anon is safe and preserves the intent documented in 0005:
+-- the function is security definer with a pinned search_path and returns a
+-- single boolean about the *caller* (auth.uid() is null for anon, so it always
+-- returns false there). It exposes no profile data and gates nothing by itself.
+
+grant execute on function public.is_admin() to anon;

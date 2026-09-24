@@ -224,6 +224,6 @@ without refresh.
 - Deploy and test `order-action` for fulfillment, buyer confirmation and disputes before releasing escrow.
 - Deploy and monitor `bale-expiry` and `payout-reconcile`; they reconcile
   asynchronous Paystack refunds/transfers without duplicate money movement.
-- Confirm migrations `0005`–`0016` have been applied and regenerate the shared
+- Confirm migrations `0005`–`0017` have been applied and regenerate the shared
   database types from the linked project.
 - Delete seed users and rotate any credential that was shared during setup.
