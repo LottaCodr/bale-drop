@@ -1,64 +1,112 @@
 -- ============================================================================
 -- Bale Drop — demo dataset (DEV ONLY, never run on production).
--- Run AFTER 0001 + 0002 + 0003 + 0004 in the Supabase SQL editor. Re-runnable
--- (ON CONFLICT DO NOTHING throughout).
+-- Run AFTER every migration in supabase/migrations, in the Supabase SQL editor
+-- (or automatically via `supabase db reset`). Re-runnable: auth users are
+-- upserted/repaired, everything else is ON CONFLICT DO NOTHING.
 --
--- Creates: 5 vendor auth users + 9 buyer auth users (password: BaleDrop123!),
--- profiles, approved vendor shops, 8 products, 3 live bale splits with paid
--- bookings, 2 reviews, 1 promo code.
+-- Creates: 5 vendor + 1 admin + 9 buyer auth users (password: BaleDrop123!)
+-- with email identities and correct profile roles, approved vendor shops,
+-- 8 products, 3 live bale splits with paid bookings, 2 reviews, 1 promo code.
 -- ============================================================================
 
+-- ---------- auth users + identities + profiles ----------
+-- Kept identical to supabase/fix-demo-logins.sql (which explains the four
+-- GoTrue requirements the old inline insert missed). Upserts, so re-running
+-- repairs broken demo users instead of skipping them.
 create extension if not exists pgcrypto;
+-- Hosted Supabase installs pgcrypto in the `extensions` schema.
+set search_path = public, extensions;
 
--- ---------- auth users ----------
 do $$
 declare
-  v_instance uuid;
+  v_nil constant uuid := '00000000-0000-0000-0000-000000000000';
+  -- Cost 10 = GoTrue's own bcrypt cost (no silent rehash on first login).
+  v_hash text := crypt('BaleDrop123!', gen_salt('bf', 10));
   u record;
 begin
-  select id into v_instance from auth.instances limit 1;
   for u in select * from (values
-    ('10000000-0000-0000-0000-000000000001', 'adaeze@baledrop.demo'),
-    ('10000000-0000-0000-0000-000000000002', 'kano@baledrop.demo'),
-    ('10000000-0000-0000-0000-000000000003', 'ph@baledrop.demo'),
-    ('10000000-0000-0000-0000-000000000004', 'abuja@baledrop.demo'),
-    ('10000000-0000-0000-0000-000000000005', 'yaba@baledrop.demo'),
-    ('90000000-0000-0000-0000-000000000001', 'admin@baledrop.demo'),
-    ('20000000-0000-0000-0000-000000000001', 'buyer1@baledrop.demo'),
-    ('20000000-0000-0000-0000-000000000002', 'buyer2@baledrop.demo'),
-    ('20000000-0000-0000-0000-000000000003', 'buyer3@baledrop.demo'),
-    ('20000000-0000-0000-0000-000000000004', 'buyer4@baledrop.demo'),
-    ('20000000-0000-0000-0000-000000000005', 'buyer5@baledrop.demo'),
-    ('20000000-0000-0000-0000-000000000006', 'buyer6@baledrop.demo'),
-    ('20000000-0000-0000-0000-000000000007', 'buyer7@baledrop.demo'),
-    ('20000000-0000-0000-0000-000000000008', 'buyer8@baledrop.demo'),
-    ('20000000-0000-0000-0000-000000000009', 'buyer9@baledrop.demo')
-  ) as t(id, email)
+    ('10000000-0000-0000-0000-000000000001'::uuid, 'adaeze@baledrop.demo', 'vendor', 'Adaeze T.',        'Lagos'),
+    ('10000000-0000-0000-0000-000000000002'::uuid, 'kano@baledrop.demo',   'vendor', 'Kano B.',          'Kano'),
+    ('10000000-0000-0000-0000-000000000003'::uuid, 'ph@baledrop.demo',     'vendor', 'PH H.',            'Port Harcourt'),
+    ('10000000-0000-0000-0000-000000000004'::uuid, 'abuja@baledrop.demo',  'vendor', 'Grade A.',         'Abuja'),
+    ('10000000-0000-0000-0000-000000000005'::uuid, 'yaba@baledrop.demo',   'vendor', 'Yaba V.',          'Lagos'),
+    ('90000000-0000-0000-0000-000000000001'::uuid, 'admin@baledrop.demo',  'admin',  'Bale Drop Admin',  'Lagos'),
+    ('20000000-0000-0000-0000-000000000001'::uuid, 'buyer1@baledrop.demo', 'buyer',  'Chiamaka O.',      'Lagos'),
+    ('20000000-0000-0000-0000-000000000002'::uuid, 'buyer2@baledrop.demo', 'buyer',  'Obi E.',           'Abuja'),
+    ('20000000-0000-0000-0000-000000000003'::uuid, 'buyer3@baledrop.demo', 'buyer',  'Emeka A.',         'Port Harcourt'),
+    ('20000000-0000-0000-0000-000000000004'::uuid, 'buyer4@baledrop.demo', 'buyer',  'Fatima S.',        'Kano'),
+    ('20000000-0000-0000-0000-000000000005'::uuid, 'buyer5@baledrop.demo', 'buyer',  'Ibrahim M.',       'Kano'),
+    ('20000000-0000-0000-0000-000000000006'::uuid, 'buyer6@baledrop.demo', 'buyer',  'Damilola A.',      'Lagos'),
+    ('20000000-0000-0000-0000-000000000007'::uuid, 'buyer7@baledrop.demo', 'buyer',  'Tunde B.',         'Abuja'),
+    ('20000000-0000-0000-0000-000000000008'::uuid, 'buyer8@baledrop.demo', 'buyer',  'Segun K.',         'Lagos'),
+    ('20000000-0000-0000-0000-000000000009'::uuid, 'buyer9@baledrop.demo', 'buyer',  'Ngozi U.',         'Port Harcourt')
+  ) as t(id, email, role, full_name, city)
   loop
-    insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at)
-    values (v_instance, u.id::uuid, 'authenticated', 'authenticated', u.email,
-            crypt('BaleDrop123!', gen_salt('bf')), now(), now(), now())
-    on conflict (id) do nothing;
+    -- Someone may have signed this email up by hand under another id; the
+    -- rest of the seed references the fixed ids, so leave that row alone.
+    if exists (select 1 from auth.users where lower(email) = u.email and id <> u.id) then
+      raise warning 'Skipping %: already registered with a different id. Delete that user in Authentication → Users and re-run.', u.email;
+      continue;
+    end if;
+
+    insert into auth.users (
+      instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+      raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
+      confirmation_token, recovery_token, email_change_token_new, email_change,
+      email_change_token_current, phone_change, phone_change_token, reauthentication_token
+    ) values (
+      v_nil, u.id, 'authenticated', 'authenticated', u.email, v_hash, now(),
+      '{"provider": "email", "providers": ["email"]}'::jsonb,
+      jsonb_build_object(
+        'full_name', u.full_name, 'city', u.city, 'email_verified', true,
+        -- only 'vendor' is honoured by handle_new_user(); admin is set below
+        'role', case when u.role = 'vendor' then 'vendor' else 'buyer' end,
+        'onboarded', true
+      ),
+      now(), now(),
+      '', '', '', '', '', '', '', ''
+    )
+    on conflict (id) do update set
+      instance_id                = excluded.instance_id,
+      aud                        = excluded.aud,
+      role                       = excluded.role,
+      email                      = excluded.email,
+      encrypted_password         = excluded.encrypted_password,
+      email_confirmed_at         = coalesce(auth.users.email_confirmed_at, now()),
+      raw_app_meta_data          = coalesce(auth.users.raw_app_meta_data, '{}'::jsonb) || excluded.raw_app_meta_data,
+      raw_user_meta_data         = coalesce(auth.users.raw_user_meta_data, '{}'::jsonb) || excluded.raw_user_meta_data,
+      confirmation_token         = coalesce(auth.users.confirmation_token, ''),
+      recovery_token             = coalesce(auth.users.recovery_token, ''),
+      email_change_token_new     = coalesce(auth.users.email_change_token_new, ''),
+      email_change               = coalesce(auth.users.email_change, ''),
+      email_change_token_current = coalesce(auth.users.email_change_token_current, ''),
+      phone_change               = coalesce(auth.users.phone_change, ''),
+      phone_change_token         = coalesce(auth.users.phone_change_token, ''),
+      reauthentication_token     = coalesce(auth.users.reauthentication_token, ''),
+      banned_until               = null,
+      updated_at                 = now();
+
+    -- The email identity GoTrue requires for password sign-in.
+    insert into auth.identities (id, user_id, provider_id, provider, identity_data, last_sign_in_at, created_at, updated_at)
+    values (
+      gen_random_uuid(), u.id, u.id::text, 'email',
+      jsonb_build_object('sub', u.id::text, 'email', u.email, 'email_verified', true, 'phone_verified', false),
+      now(), now(), now()
+    )
+    on conflict (provider_id, provider) do update set
+      user_id       = excluded.user_id,
+      identity_data = excluded.identity_data,
+      updated_at    = now();
+
+    -- The signup trigger defaults to buyer — force the intended role.
+    insert into public.profiles (id, role, full_name, city)
+    values (u.id, u.role, u.full_name, u.city)
+    on conflict (id) do update set
+      role      = excluded.role,
+      full_name = coalesce(public.profiles.full_name, excluded.full_name),
+      city      = coalesce(public.profiles.city, excluded.city);
   end loop;
 end $$;
-
--- ---------- profiles ----------
-insert into public.profiles (id, role, full_name, city) values
-  ('10000000-0000-0000-0000-000000000001', 'vendor', 'Adaeze T.', 'Lagos'),
-  ('10000000-0000-0000-0000-000000000002', 'vendor', 'Kano B.', 'Kano'),
-  ('10000000-0000-0000-0000-000000000003', 'vendor', 'PH H.', 'Port Harcourt'),
-  ('10000000-0000-0000-0000-000000000004', 'vendor', 'Grade A.', 'Abuja'),
-  ('10000000-0000-0000-0000-000000000005', 'vendor', 'Yaba V.', 'Lagos'),
-  ('20000000-0000-0000-0000-000000000001', 'buyer', 'Chiamaka O.', 'Lagos'),
-  ('20000000-0000-0000-0000-000000000002', 'buyer', 'Obi E.', 'Abuja'),
-  ('20000000-0000-0000-0000-000000000003', 'buyer', 'Emeka A.', 'Port Harcourt'),
-  ('20000000-0000-0000-0000-000000000004', 'buyer', 'Fatima S.', 'Kano'),
-  ('20000000-0000-0000-0000-000000000005', 'buyer', 'Ibrahim M.', 'Kano'),
-  ('20000000-0000-0000-0000-000000000006', 'buyer', 'Damilola A.', 'Lagos'),
-  ('20000000-0000-0000-0000-000000000007', 'buyer', 'Tunde B.', 'Abuja'),
-  ('20000000-0000-0000-0000-000000000008', 'buyer', 'Segun K.', 'Lagos'),
-  ('20000000-0000-0000-0000-000000000009', 'buyer', 'Ngozi U.', 'Port Harcourt')
-on conflict (id) do nothing;
 
 -- ---------- vendor shops ----------
 insert into public.vendor_profiles

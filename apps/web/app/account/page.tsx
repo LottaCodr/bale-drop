@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { isSupabaseLive } from "@/lib/config";
 import { getSessionProfile } from "@/lib/session";
+import { formatNigerianPhone } from "@/lib/auth/validation";
 import { AccountClient } from "./account-client";
 
 /**
@@ -54,9 +55,9 @@ export default async function AccountPage() {
         initial={{
           email: session?.email ?? "buyer1@baledrop.demo",
           role: session?.role ?? "buyer",
-          fullName: session?.fullName ?? "Chiamaka Obi",
-          phone: "+234 803 123 4567",
-          city: "Lagos",
+          fullName: live ? session?.fullName ?? "" : "Chiamaka Obi",
+          phone: live ? formatNigerianPhone(session?.phone) : "+234 803 123 4567",
+          city: live ? session?.city ?? "Lagos" : "Lagos",
         }}
       />
     </div>

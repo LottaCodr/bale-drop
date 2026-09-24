@@ -28,7 +28,8 @@ work never blocks on backend.
 | `/notifications` | Buyer/vendor notification inbox |
 | `/account/addresses` | Persistent delivery address management |
 | `/sell` | Vendor onboarding wizard (3 steps) |
-| `/login` · `/signup` | Auth (live Supabase, demo pass-through without keys) |
+| `/login` · `/signup` · `/reset-password` | Auth: show/hide password, one-tap demo accounts, friendly errors (live Supabase; demo pass-through without keys) |
+| `/welcome` | One-time onboarding (name, phone, city) after signup / first Google sign-in |
 | `/admin` | Admin queues: approvals, moderation, disputes, payouts |
 | `/design` | Living design system (tokens + primitives) |
 
@@ -50,9 +51,13 @@ bale-drop/
 ## Backend setup
 
 See **[docs/SUPABASE-SETUP.md](docs/SUPABASE-SETUP.md)** — link the project →
-apply migrations `0001` through `0017` → add public keys → deploy the Edge
+apply migrations `0001` through `0021` → add public keys → deploy the Edge
 Functions and configure Paystack webhooks/cron jobs. Until then the app runs on
 the mock fallback dataset; no real money is collected.
+
+**Demo logins fail with "Invalid login credentials"?** Run
+`supabase/fix-demo-logins.sql` once in the Supabase SQL editor (details in the
+setup guide).
 
 ## Docs
 

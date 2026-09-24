@@ -24,7 +24,7 @@ import { usePrefsStore } from "@/lib/store/prefs-store";
 import { usePreferences } from "@/lib/store/hooks";
 import { useWishlistCount } from "@/lib/store/hooks";
 import { hueFor } from "@bale-drop/database";
-import { track } from "@/lib/analytics";
+import { formatNigerianPhone, normalizeNigerianPhone } from "@/lib/auth/validation";
 
 interface AccountInitial {
   email: string;
@@ -67,8 +67,9 @@ export function AccountClient({ live, initial }: { live: boolean; initial: Accou
       setError("Add the name delivery riders should ask for.");
       return;
     }
-    if (fields.phone.replace(/\D/g, "").length < 10) {
-      setError("Add a reachable Nigerian phone number.");
+    const phone = normalizeNigerianPhone(fields.phone);
+    if (!phone) {
+      setError("Add a reachable Nigerian mobile number, e.g. 0803 123 4567.");
       return;
     }
     setPrefsCity(fields.city);
@@ -90,28 +91,28 @@ export function AccountClient({ live, initial }: { live: boolean; initial: Accou
     }
     const { error: updateError } = await sb
       .from("profiles")
-      .update({ full_name: fields.fullName.trim(), phone: fields.phone.trim(), city: fields.city })
+      .update({ full_name: fields.fullName.trim(), phone, city: fields.city })
       .eq("id", user.id);
     setSaving(false);
     if (updateError) {
       setError(updateError.message);
       return;
     }
+    setFields((current) => ({ ...current, phone: formatNigerianPhone(phone) }));
     setNotice("Profile updated.");
-    track("login", { source: "profile_save" });
   }
 
   return (
     <div className="mt-5 flex flex-col gap-4">
       <Card className="flex flex-wrap items-center gap-4 p-5">
-        <Avatar initials={initial.fullName.slice(0, 2).toUpperCase()} hue={hueFor(initial.email)} size="lg" />
+        <Avatar initials={(initial.fullName || initial.email).slice(0, 2).toUpperCase()} hue={hueFor(initial.email)} size="lg" />
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-2 font-bold">
-            {initial.fullName} <Badge variant="outline">{ROLE_LABEL[initial.role] ?? initial.role}</Badge>
+            {initial.fullName || "Add your name"} <Badge variant="outline">{ROLE_LABEL[initial.role] ?? initial.role}</Badge>
           </p>
           <p className="truncate text-sm text-muted-foreground">{initial.email}</p>
           <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-            <ShieldCheck className="h-3.5 w-3.5 text-primary" /> Escrow protected buyer account
+            <ShieldCheck className="h-3.5 w-3.5 text-primary" /> {initial.role === "vendor" ? "Verified seller account" : initial.role === "admin" ? "Administrator account" : "Escrow protected buyer account"}
           </p>
         </div>
       </Card>
@@ -203,8 +204,10 @@ export function AccountClient({ live, initial }: { live: boolean; initial: Accou
           { href: "/account/addresses", icon: MapPin, title: "Saved addresses", sub: "Manage delivery addresses" },
           { href: "/wishlist", icon: Heart, title: `Saved items${wishlistCount ? ` (${wishlistCount})` : ""}`, sub: "Move a saved item into your cart" },
           { href: "/notifications", icon: Bell, title: "Notifications", sub: "Order and escrow updates" },
-          { href: "/vendor", icon: Store, title: "Seller dashboard", sub: "Listings, fulfillment and payouts" },
-          { href: "/reset-password", icon: ShieldCheck, title: "Password & security", sub: "Reset your password" },
+          initial.role === "buyer"
+            ? { href: "/sell", icon: Store, title: "Start selling", sub: "Open a verified shop in about 5 minutes" }
+            : { href: "/vendor", icon: Store, title: "Seller dashboard", sub: "Listings, fulfillment and payouts" },
+          { href: "/reset-password", icon: ShieldCheck, title: "Password & security", sub: "Change your password" },
         ].map((link) => (
           <Card key={link.href} className="p-0">
             <Link href={link.href} className="flex items-center gap-3 p-4 transition hover:bg-muted/50">

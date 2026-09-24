@@ -11,6 +11,10 @@ export interface SessionProfile {
   email: string | undefined;
   role: string;
   fullName: string | null;
+  phone: string | null;
+  city: string | null;
+  /** `user_metadata.onboarded` — the one-time /welcome step was completed or skipped. */
+  onboarded: boolean;
 }
 
 export async function getSessionProfile(): Promise<SessionProfile | null> {
@@ -21,13 +25,16 @@ export async function getSessionProfile(): Promise<SessionProfile | null> {
   if (!user) return null;
   const { data: profile } = await sb
     .from("profiles")
-    .select("role, full_name")
+    .select("role, full_name, phone, city")
     .eq("id", user.id)
     .maybeSingle();
   return {
     userId: user.id,
     email: user.email,
     role: profile?.role ?? "buyer",
-    fullName: profile?.full_name ?? null,
+    fullName: profile?.full_name ?? (typeof user.user_metadata?.full_name === "string" ? user.user_metadata.full_name : null),
+    phone: profile?.phone ?? null,
+    city: profile?.city ?? null,
+    onboarded: user.user_metadata?.onboarded === true,
   };
 }
