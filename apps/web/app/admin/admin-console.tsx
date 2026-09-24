@@ -8,18 +8,20 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { naira } from "@/lib/format";
 import { invokeOperation } from "@/lib/operations";
+import { listSupportMessages, resolveSupportMessage, TOPIC_LABELS, type SupportMessage } from "@/lib/support";
 import { supabaseBrowser } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
 /** Admin console UI — rendered by the role-gated server page. Queues go live with auth. */
 
-type Tab = "vendors" | "products" | "disputes" | "payouts";
+type Tab = "vendors" | "products" | "disputes" | "payouts" | "support";
 
 const TABS: { id: Tab; label: string; count: number }[] = [
   { id: "vendors", label: "Vendor approvals", count: 3 },
   { id: "products", label: "Product moderation", count: 2 },
   { id: "disputes", label: "Disputes", count: 2 },
   { id: "payouts", label: "Payouts", count: 2 },
+  { id: "support", label: "Support", count: 0 },
 ];
 
 const VENDOR_QUEUE = [
@@ -38,6 +40,31 @@ const DISPUTES = [
   { id: "DP-111", order: "BD-2007", issue: "Partial delivery — 8 of 10 slots", evidence: 2, amount: 22000 },
 ];
 
+const SUPPORT_SAMPLE: SupportMessage[] = [
+  {
+    id: "SM-401",
+    name: "Ngozi E.",
+    email: "ngozi@example.com",
+    topic: "delivery",
+    body: "The courier called once while I was at work and now the parcel is back at the pick-up point. Can it be rebooked for Saturday?",
+    order_ref: "BD-2019",
+    status: "open",
+    created_at: new Date(Date.now() - 3 * 3600_000).toISOString(),
+    resolved_at: null,
+  },
+  {
+    id: "SM-400",
+    name: "Ibrahim S.",
+    email: "ibrahim@example.com",
+    topic: "vendor",
+    body: "My payout shows pending since Tuesday. Vendor shop is Sabon Gari Bales — can you check the transfer?",
+    order_ref: null,
+    status: "open",
+    created_at: new Date(Date.now() - 26 * 3600_000).toISOString(),
+    resolved_at: null,
+  },
+];
+
 const PAYOUTS = [
   { id: "PO-331", vendor: "Adaeze Thrift Co.", gross: 150000, commission: 10500, eta: "Today", status: "pending" },
   { id: "PO-330", vendor: "Grade-A Plug Abuja", gross: 84000, commission: 5880, eta: "Today", status: "pending" },
@@ -50,6 +77,7 @@ export function AdminConsole({ demo }: { demo: boolean }) {
   const [productQueue, setProductQueue] = useState(PRODUCT_QUEUE);
   const [disputeQueue, setDisputeQueue] = useState(DISPUTES);
   const [payoutQueue, setPayoutQueue] = useState(PAYOUTS);
+  const [supportQueue, setSupportQueue] = useState<SupportMessage[]>(demo ? SUPPORT_SAMPLE : []);
   const [heldEscrow, setHeldEscrow] = useState<number | null>(null);
   const [loading, setLoading] = useState(!demo);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
@@ -76,6 +104,11 @@ export function AdminConsole({ demo }: { demo: boolean }) {
       setHeldEscrow((escrow.data ?? []).reduce((sum, row) => sum + Number(row.total_naira), 0));
       setLoading(false);
     });
+    // Support is a separate read: it must not fail the money queues if the
+    // migration has not been applied yet.
+    listSupportMessages()
+      .then(setSupportQueue)
+      .catch(() => setSupportQueue([]));
   }, [demo, refreshToken]);
 
   async function viewEvidence(id: string) {
@@ -107,9 +140,35 @@ export function AdminConsole({ demo }: { demo: boolean }) {
     setRefreshToken((value) => value + 1);
   }
 
+  async function resolveMessage(id: string) {
+    setError(null);
+    setActionBusy(`support-${id}`);
+    try {
+      if (!demo) await resolveSupportMessage(id);
+      setSupportQueue((current) =>
+        current.map((message) =>
+          message.id === id ? { ...message, status: "resolved", resolved_at: new Date().toISOString() } : message
+        )
+      );
+    } catch (resolveError) {
+      setError(resolveError instanceof Error ? resolveError.message : "Could not resolve this message.");
+    } finally {
+      setActionBusy(null);
+    }
+  }
+
   const tabs = TABS.map((item) => ({
     ...item,
-    count: item.id === "vendors" ? vendorQueue.length : item.id === "products" ? productQueue.length : item.id === "disputes" ? disputeQueue.length : payoutQueue.length,
+    count:
+      item.id === "vendors"
+        ? vendorQueue.length
+        : item.id === "products"
+          ? productQueue.length
+          : item.id === "disputes"
+            ? disputeQueue.length
+            : item.id === "payouts"
+              ? payoutQueue.length
+              : supportQueue.filter((message) => message.status === "open").length,
   }));
 
   return (
@@ -251,6 +310,51 @@ export function AdminConsole({ demo }: { demo: boolean }) {
                 )}
               </li>
             ))}
+          </ul>
+        )}
+        {tab === "support" && (
+          <ul className="divide-y">
+            {loading ? (
+              <li className="p-6 text-sm text-muted-foreground">Loading live queue…</li>
+            ) : supportQueue.length === 0 ? (
+              <li className="p-6 text-sm text-muted-foreground">
+                No support messages yet. Buyers reach this queue from the footer and from order pages.
+              </li>
+            ) : (
+              supportQueue.map((message) => (
+                <li key={message.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-bold">
+                      {message.name}{" "}
+                      <span className="font-mono text-xs font-normal text-muted-foreground">{message.id.slice(0, 8)}</span>
+                    </p>
+                    <p className="text-[13px] text-muted-foreground">
+                      {TOPIC_LABELS[message.topic]} • {message.email}
+                      {message.order_ref ? ` • ${message.order_ref}` : ""} •{" "}
+                      {new Date(message.created_at).toLocaleString("en-NG")}
+                    </p>
+                    <p className="mt-2 whitespace-pre-line text-sm">{message.body}</p>
+                    <a
+                      href={`mailto:${message.email}?subject=${encodeURIComponent(`Re: your Bale Drop message${message.order_ref ? ` (${message.order_ref})` : ""}`)}`}
+                      className="mt-2 inline-block text-xs font-semibold text-primary hover:underline"
+                    >
+                      Reply by email
+                    </a>
+                  </div>
+                  {message.status === "resolved" ? (
+                    <Badge variant="verified">Resolved</Badge>
+                  ) : (
+                    <Button
+                      size="sm"
+                      onClick={() => resolveMessage(message.id)}
+                      disabled={actionBusy === `support-${message.id}`}
+                    >
+                      {actionBusy === `support-${message.id}` ? <Loader2 className="animate-spin" /> : <Check />} Mark resolved
+                    </Button>
+                  )}
+                </li>
+              ))
+            )}
           </ul>
         )}
       </Card>

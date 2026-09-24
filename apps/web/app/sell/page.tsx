@@ -21,7 +21,8 @@ import { Progress } from "@/components/ui/progress";
 import { supabaseBrowser } from "@/lib/supabase";
 import { isSupabaseLive } from "@/lib/config";
 import { naira } from "@/lib/format";
-import { CITIES } from "@/lib/mock";
+import { track } from "@/lib/analytics";
+import { CITIES } from "@/lib/taxonomy";
 import { cn } from "@/lib/utils";
 
 /**
@@ -109,6 +110,8 @@ export default function SellPage() {
       return;
     }
     setError(null);
+    // Funnel: where vendors drop off in onboarding is a supply-risk metric.
+    track("vendor_apply_start", { step: step + 1, city: fields.city });
     setStep((s) => s + 1);
   }
 
@@ -118,6 +121,7 @@ export default function SellPage() {
       setError(err);
       return;
     }
+    track("vendor_apply_submit", { city: fields.city, plan });
     if (!isSupabaseLive()) {
       setReference("VD-1024"); // demo
       return;

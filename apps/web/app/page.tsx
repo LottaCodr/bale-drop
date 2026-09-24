@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, MapPin, ShieldCheck, Store, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { TrustStrip } from "@/components/site-chrome";
 import {
@@ -11,6 +12,8 @@ import {
   SectionHeader,
   VendorCard,
 } from "@/components/commerce";
+import { RecentlyViewedRail } from "@/components/recently-viewed";
+import { HomeTracker } from "@/components/home-tracker";
 import { getHomeData } from "@/lib/data";
 import { slotsLeft } from "@bale-drop/database";
 
@@ -24,6 +27,7 @@ export default async function HomePage() {
 
   return (
     <div className="animate-fade-up">
+      <HomeTracker />
       {/* ---------- HERO ---------- */}
       <section className="container grid gap-8 py-8 md:py-12 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
         <div>
@@ -40,7 +44,7 @@ export default async function HomePage() {
           </p>
           <div className="mt-6 flex flex-col gap-3 sm:flex-row">
             <Button size="lg" asChild>
-              <Link href="#splits">
+              <Link href="/search?kind=bale">
                 Browse live splits <ArrowRight />
               </Link>
             </Button>
@@ -75,7 +79,7 @@ export default async function HomePage() {
                 </span>
                 Filling fast — {slotsLeft(featured.bale)} slot{slotsLeft(featured.bale) === 1 ? "" : "s"} left
               </p>
-              <Link href="#splits" className="text-sm font-semibold text-primary hover:underline">
+              <Link href="/search?kind=bale" className="text-sm font-semibold text-primary hover:underline">
                 All splits
               </Link>
             </div>
@@ -91,25 +95,53 @@ export default async function HomePage() {
         <SectionHeader
           title="Live bale splits"
           sub="Claim a slot. If the bale doesn't fill in time, everyone is auto-refunded."
-          href="#splits"
-          linkLabel="How splits work"
+          href="/search?kind=bale"
+          linkLabel="See all splits"
         />
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {bales.map((b) => (
-            <BaleSplitCard key={b.bale.id} bale={b.bale} product={b.product} vendor={b.vendor} />
-          ))}
-        </div>
+        {bales.length === 0 ? (
+          <Card className="p-8 text-center">
+            <p className="font-bold">No splits are open right now</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              New bales open every day. Browse single pieces in the meantime, or ask a vendor to start a split.
+            </p>
+            <Button className="mt-4" asChild>
+              <Link href="/search">Browse all listings</Link>
+            </Button>
+          </Card>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {bales.map((b) => (
+              <BaleSplitCard key={b.bale.id} bale={b.bale} product={b.product} vendor={b.vendor} />
+            ))}
+          </div>
+        )}
       </section>
 
       {/* ---------- BROWSE ---------- */}
       <section id="new" className="container scroll-mt-24 py-6">
-        <SectionHeader title="Shop by category" sub="Filter by city, grade and price in the full app." />
+        <SectionHeader
+          title="Shop by category"
+          sub="Filter by city, grade and price — every listing is escrow protected."
+          href="/search"
+          linkLabel="Open search"
+        />
         <CategoryPills />
-        <div className="mt-6 grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4">
-          {products.map((p) => (
-            <ProductCard key={p.product.id} product={p.product} vendor={p.vendor} />
-          ))}
-        </div>
+        {products.length === 0 ? (
+          <Card className="p-8 text-center">
+            <p className="font-bold">No listings are live yet</p>
+            <p className="mt-1 text-sm text-muted-foreground">Vendors are being verified in your city.</p>
+            <Button className="mt-4" asChild>
+              <Link href="/sell">Apply to sell</Link>
+            </Button>
+          </Card>
+        ) : (
+          <div className="mt-6 grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4">
+            {products.map((p) => (
+              <ProductCard key={p.product.id} product={p.product} vendor={p.vendor} />
+            ))}
+          </div>
+        )}
+        <RecentlyViewedRail limit={6} />
       </section>
 
       {/* ---------- VENDORS ---------- */}

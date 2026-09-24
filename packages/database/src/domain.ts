@@ -28,6 +28,8 @@ export interface Vendor {
 export interface Product {
   id: string;
   title: string;
+  /** Present when the vendor wrote one; feeds search relevance. */
+  description?: string;
   category: string;
   grade: Grade;
   price: number;
@@ -110,6 +112,7 @@ export function mapProductRow(row: ProductRow): Product {
   return {
     id: row.id,
     title: row.title,
+    description: row.description ?? undefined,
     category: row.category,
     grade: (["A", "B", "C"].includes(row.grade) ? row.grade : "B") as Grade,
     price: row.price_naira,

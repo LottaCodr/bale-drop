@@ -72,3 +72,4 @@ export function supabaseAdmin(): DbClient {
 export type { Database, DbClient } from "./types";
 export * from "./domain";
 export * from "./queries";
+export * from "./search";

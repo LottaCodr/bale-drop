@@ -1,20 +1,53 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { BadgeCheck, Check, Copy, Share2, ShieldCheck, Users } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { BadgeCheck, Check, Clock, Share2, ShieldCheck, Users } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { CountdownBoxes } from "@/components/countdown";
+import { ShareButton } from "@/components/share-button";
 import { useBaleLive } from "@/hooks/use-bale-live";
 import { supabaseBrowser } from "@/lib/supabase";
 import { isSupabaseLive } from "@/lib/config";
-import { naira } from "@/lib/format";
+import { naira, pad } from "@/lib/format";
 import { initializePayment } from "@/lib/payments";
+import { PREFS_STORAGE_KEY, usePrefsStore } from "@/lib/store/prefs-store";
+import { track } from "@/lib/analytics";
 import { claimSlot, slotsLeft, type BaleListing, type Product, type Vendor } from "@bale-drop/database";
 import { cn } from "@/lib/utils";
+
+/**
+ * How long a `pending` booking holds a slot. Mirrors the `reserved_until`
+ * window written by `claim_bale_slot()` and enforced by `release_expired_bale_reservations()`.
+ */
+const RESERVATION_MS = 10 * 60 * 1000;
+
+/** Re-run a callback when another tab changes the persisted slot claims. */
+function syncClaims(callback: () => void): () => void {
+  if (typeof window === "undefined") return () => undefined;
+  const handler = (event: StorageEvent) => {
+    if (!event.key || event.key.startsWith(PREFS_STORAGE_KEY)) callback();
+  };
+  window.addEventListener("storage", handler);
+  return () => window.removeEventListener("storage", handler);
+}
+
+function perSlotOf(bale: BaleListing): number {
+  return Math.round(bale.totalAmount / bale.splitCount);
+}
+
+/** Honest reservation copy: mm:ss when we know the window, generic otherwise. */
+function reservationLabel(expiresAt: number | null, now: number): string {
+  if (!expiresAt) return "Slot reserved — complete payment to lock it";
+  const remaining = Math.max(0, expiresAt - now);
+  if (remaining === 0) return "Reservation window closed — re-claim if the slot is still open";
+  const minutes = Math.floor(remaining / 60000);
+  const seconds = Math.floor((remaining % 60000) / 1000);
+  return `Slot reserved for ${pad(minutes)}:${pad(seconds)} — complete payment to lock it`;
+}
 
 /**
  * Bale Split booking widget — the conversion core.
@@ -39,11 +72,39 @@ export function BaleWidget({
   const [claiming, setClaiming] = useState(false);
   const [paymentStarting, setPaymentStarting] = useState(false);
   const slotIdempotencyKey = useRef<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const rememberClaim = usePrefsStore((state) => state.rememberClaim);
+  const forgetClaim = usePrefsStore((state) => state.forgetClaim);
+  const [claimExpiresAt, setClaimExpiresAt] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+
+  /**
+   * A reserved slot survives a refresh (or an accidental tab close) because the
+   * claim is persisted: a buyer who comes back must be able to finish paying the
+   * slot they already hold, not discover it silently lost.
+   */
+  useEffect(() => {
+    const restore = () => {
+      const claim = usePrefsStore.getState().slotClaims[initialBale.id];
+      if (!claim) return;
+      setBookingId((current) => current ?? claim.bookingId);
+      setClaimed(true);
+      setClaimExpiresAt(claim.claimedAt + RESERVATION_MS);
+    };
+    restore();
+    return syncClaims(restore);
+  }, [initialBale.id]);
+
+  // Live countdown on the reservation window; when it lapses we ask the server
+  // for the truth instead of guessing (the RPC may already have released it).
+  useEffect(() => {
+    if (!claimed || paid) return;
+    const interval = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, [claimed, paid]);
 
   const pct = Math.round((bale.bookedCount / bale.splitCount) * 100);
   const left = slotsLeft(bale);
-  const perSlot = Math.round(bale.totalAmount / bale.splitCount);
+  const perSlot = perSlotOf(bale);
 
   async function handleClaim() {
     setClaimError(null);
@@ -65,6 +126,9 @@ export function BaleWidget({
           return;
         }
         setBookingId(booking.booking_id);
+        setClaimExpiresAt(Date.now() + RESERVATION_MS);
+        rememberClaim(bale.id, booking.booking_id);
+        track("claim_slot", { item_id: product.id, bale_id: bale.id, value: perSlotOf(bale), slots_left: left });
       } catch (e) {
         setClaimError(e instanceof Error ? e.message : "Claim failed");
         setClaiming(false);
@@ -86,6 +150,7 @@ export function BaleWidget({
     }
     setClaimError(null);
     setPaymentStarting(true);
+    track("slot_payment_started", { item_id: product.id, bale_id: bale.id, booking_id: bookingId, value: perSlotOf(bale) });
     const idempotencyKey = slotIdempotencyKey.current ?? crypto.randomUUID();
     slotIdempotencyKey.current = idempotencyKey;
     const { data, error, retry_same_attempt: retrySameAttempt } = await initializePayment({
@@ -103,13 +168,16 @@ export function BaleWidget({
       if (!retrySameAttempt) {
         setClaimed(false);
         setBookingId(null);
+        setClaimExpiresAt(null);
         slotIdempotencyKey.current = null;
+        forgetClaim(bale.id);
       }
       return;
     }
     if (data.already_processed) {
       setPaymentStarting(false);
       setPaid(true);
+      forgetClaim(bale.id);
       return;
     }
     if (!data.authorization_url) {
@@ -118,18 +186,6 @@ export function BaleWidget({
       return;
     }
     window.location.assign(data.authorization_url);
-  }
-
-  async function share() {
-    try {
-      await navigator.clipboard.writeText(
-        `Join my ${product.title} split — ${naira(perSlot)}/slot, ${left} left! ${window.location.href}`
-      );
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setCopied(false);
-    }
   }
 
   return (
@@ -143,14 +199,14 @@ export function BaleWidget({
           </span>
           LIVE SPLIT
         </Badge>
-        <button
-          type="button"
-          onClick={share}
-          className="flex items-center gap-1.5 rounded-full px-2 py-1 text-[13px] font-semibold text-primary hover:bg-primary/10"
-        >
-          {copied ? <Check className="h-4 w-4" /> : <Share2 className="h-4 w-4" />}
-          {copied ? "Link copied!" : "Invite friends"}
-        </button>
+        <ShareButton
+          title={product.title}
+          pricePerSlot={perSlot}
+          slotsLeftCount={left}
+          variant="ghost"
+          size="sm"
+          className="[&_a]:hidden"
+        />
       </div>
 
       <div className="flex flex-col gap-4 p-4 md:p-5">
@@ -226,7 +282,7 @@ export function BaleWidget({
         {claimed && !paid && (
           <div className="flex flex-col gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 dark:bg-amber-950/20">
             <p className="flex items-center gap-1.5 text-sm font-bold text-amber-800 dark:text-amber-200">
-              <Copy className="h-4 w-4" /> Slot reserved for 10:00 — complete payment to lock it
+              <Clock className="h-4 w-4" /> {reservationLabel(claimExpiresAt, now)}
             </p>
             <Button size="lg" className="w-full text-base" onClick={payForSlot} disabled={paymentStarting}>
               {paymentStarting ? "Opening Paystack…" : `Pay ${naira(perSlot)} with Paystack`}

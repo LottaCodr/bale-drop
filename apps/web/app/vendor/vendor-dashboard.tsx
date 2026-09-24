@@ -11,9 +11,11 @@ import { isSupabaseLive } from "@/lib/config";
 import { naira } from "@/lib/format";
 import { invokeOperation } from "@/lib/operations";
 import { supabaseBrowser } from "@/lib/supabase";
-import { CITIES, PRODUCTS } from "@/lib/mock";
+import { CITIES } from "@/lib/taxonomy";
+import { PRODUCTS } from "@/lib/mock";
 import type { Database } from "@bale-drop/database";
 
+// Vendor listing categories exclude the storefront-only "All" chip.
 const CATEGORIES = ["Bales", "Men", "Women", "Kids", "Shoes", "Bags", "Vintage"];
 const STATUS_LABEL: Record<string, string> = { pending_payment: "Awaiting payment", paid: "Paid / escrow held", processing: "Processing", ready: "Ready to ship", in_transit: "In transit", delivered: "Delivered", disputed: "Dispute open" };
 
@@ -66,6 +68,23 @@ export function VendorDashboard({ demo }: { demo: boolean }) {
   }, [live]);
 
   useEffect(() => { void load(); }, [load]);
+
+  /**
+   * Vendor-visible numbers. A seller who can't see views/conversion cannot
+   * improve a listing, and "why is nothing selling?" is the fastest way to lose
+   * supply. Views come from the product row; the rest is derived from orders.
+   */
+  const stats = (() => {
+    const active = products.filter((product) => product.status === "active").length;
+    const pending = products.filter((product) => product.status === "pending").length;
+    const views = products.reduce((sum, product) => sum + (product.views ?? 0), 0);
+    const sold = products.reduce((sum, product) => sum + (product.sold_count ?? 0), 0);
+    const revenue = orders
+      .filter((order) => order.escrow_status !== "refunded" && order.status !== "cancelled")
+      .reduce((sum, order) => sum + order.total_naira, 0);
+    const awaiting = orders.filter((order) => order.status === "paid").length;
+    return { active, pending, views, sold, revenue, awaiting };
+  })();
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) { setForm((current) => ({ ...current, [key]: value })); }
 
@@ -121,12 +140,41 @@ export function VendorDashboard({ demo }: { demo: boolean }) {
       {error && <p role="alert" className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</p>}
       {notice && <p role="status" className="mt-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200">{notice}</p>}
 
-      <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4"><Card className="p-4"><p className="text-xs text-muted-foreground">Listings</p><p className="text-2xl font-extrabold">{visibleProducts.length}</p></Card><Card className="p-4"><p className="text-xs text-muted-foreground">Live / pending</p><p className="text-2xl font-extrabold">{visibleProducts.filter((p) => p.status === "active").length} / {visibleProducts.filter((p) => p.status === "pending").length}</p></Card><Card className="p-4"><p className="text-xs text-muted-foreground">Orders</p><p className="text-2xl font-extrabold">{orders.length}</p></Card><Card className="p-4"><p className="text-xs text-muted-foreground">Payouts</p><p className="text-sm font-bold">After delivery confirmation</p></Card></div>
+      {/* Seller KPIs — views, sell-through and money in escrow, not vanity counts. */}
+      <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Card className="p-4">
+          <p className="text-xs text-muted-foreground">Live listings</p>
+          <p className="text-2xl font-extrabold tabular-nums">{stats.active}</p>
+          <p className="text-[11px] text-muted-foreground">{stats.pending} awaiting moderation</p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-xs text-muted-foreground">Listing views</p>
+          <p className="text-2xl font-extrabold tabular-nums">{stats.views.toLocaleString()}</p>
+          <p className="text-[11px] text-muted-foreground">{stats.sold} units sold</p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-xs text-muted-foreground">Order value</p>
+          <p className="text-2xl font-extrabold tabular-nums">{naira(stats.revenue)}</p>
+          <p className="text-[11px] text-muted-foreground">{orders.length} orders</p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-xs text-muted-foreground">Action needed</p>
+          <p className="text-2xl font-extrabold tabular-nums">{stats.awaiting}</p>
+          <p className="text-[11px] text-muted-foreground">paid orders not yet started</p>
+        </Card>
+      </div>
+
+      {stats.awaiting > 0 && (
+        <p role="status" className="mt-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm dark:bg-amber-950/20">
+          <b>{stats.awaiting}</b> paid order{stats.awaiting === 1 ? "" : "s"} waiting to be packed. Buyers see updates
+          the moment you press <b>Start</b>.
+        </p>
+      )}
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_1.15fr]">
         <Card className="p-5"><div className="flex items-center justify-between gap-2"><div><h2 className="font-bold">Your listings</h2><p className="text-xs text-muted-foreground">New listings enter admin moderation.</p></div><Button size="sm" onClick={() => setShowForm((value) => !value)}><Plus /> New listing</Button></div>
           {showForm && <div className="mt-4 flex flex-col gap-3 border-t pt-4"><Input placeholder="Listing title" value={form.title} onChange={(e) => update("title", e.target.value)} /><div className="grid gap-3 sm:grid-cols-2"><select value={form.category} onChange={(e) => update("category", e.target.value)} className="h-11 rounded-xl border border-input bg-background px-3 text-sm">{CATEGORIES.map((category) => <option key={category}>{category}</option>)}</select><select value={form.grade} onChange={(e) => update("grade", e.target.value as FormState["grade"])} className="h-11 rounded-xl border border-input bg-background px-3 text-sm"><option value="A">Grade A</option><option value="B">Grade B</option><option value="C">Grade C</option></select></div><div className="grid gap-3 sm:grid-cols-3"><select value={form.kind} onChange={(e) => update("kind", e.target.value as FormState["kind"])} className="h-11 rounded-xl border border-input bg-background px-3 text-sm"><option value="bale">Bale</option><option value="single">Single</option></select><Input inputMode="numeric" placeholder="Price in ₦" value={form.price} onChange={(e) => update("price", e.target.value.replace(/\D/g, ""))} /><Input inputMode="numeric" placeholder="Quantity" value={form.qty} onChange={(e) => update("qty", e.target.value.replace(/\D/g, ""))} /></div><div className="grid gap-3 sm:grid-cols-2"><select value={form.city} onChange={(e) => update("city", e.target.value)} className="h-11 rounded-xl border border-input bg-background px-3 text-sm">{CITIES.map((city) => <option key={city}>{city}</option>)}</select><Input placeholder="Approx. pieces (e.g. ~60 pcs)" value={form.pieces} onChange={(e) => update("pieces", e.target.value)} /></div><Textarea placeholder="Describe grade, condition, sizing and what buyers receive" value={form.description} onChange={(e) => update("description", e.target.value)} /><label className="flex cursor-pointer items-center gap-2 rounded-xl border border-dashed p-3 text-sm"><ImagePlus className="h-4 w-4 text-primary" />{image?.name ?? "Add a listing photo"}<input type="file" accept="image/*" className="sr-only" onChange={(e) => setImage(e.target.files?.[0] ?? null)} /></label><Button onClick={createProduct} disabled={saving}>{saving ? <><Loader2 className="animate-spin" /> Saving…</> : "Submit for review"}</Button></div>}
-          <div className="mt-4 flex flex-col divide-y">{loading ? <p className="py-6 text-center text-sm text-muted-foreground"><Loader2 className="mx-auto h-4 w-4 animate-spin" /></p> : visibleProducts.map((product) => <div key={product.id} className="flex items-center gap-3 py-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary"><PackageCheck className="h-5 w-5" /></span><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{product.title}</p><p className="text-xs text-muted-foreground">{product.category} • Grade {product.grade} • {naira(product.price_naira)}</p></div><Badge variant={product.status === "active" ? "verified" : product.status === "rejected" ? "live" : "amber"}>{product.status}</Badge></div>)}</div>
+          <div className="mt-4 flex flex-col divide-y">{loading ? <p className="py-6 text-center text-sm text-muted-foreground"><Loader2 className="mx-auto h-4 w-4 animate-spin" /></p> : visibleProducts.length === 0 ? <div className="py-6 text-center"><p className="text-sm font-semibold">No listings yet</p><p className="mt-1 text-xs text-muted-foreground">Add your first bale or single piece — it goes live after moderation (usually under 24 hours).</p></div> : visibleProducts.map((product) => <div key={product.id} className="flex items-center gap-3 py-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary"><PackageCheck className="h-5 w-5" /></span><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{product.title}</p><p className="text-xs text-muted-foreground">{product.category} • Grade {product.grade} • {naira(product.price_naira)}</p></div><Badge variant={product.status === "active" ? "verified" : product.status === "rejected" ? "live" : "amber"}>{product.status}</Badge></div>)}</div>
         </Card>
 
         <Card className="p-5"><div><h2 className="font-bold">Orders to fulfill</h2><p className="text-xs text-muted-foreground">Only paid orders can move through dispatch.</p></div><div className="mt-4 flex flex-col divide-y">{loading ? <p className="py-6 text-center text-sm text-muted-foreground"><Loader2 className="mx-auto h-4 w-4 animate-spin" /></p> : orders.length === 0 ? <p className="py-6 text-sm text-muted-foreground">No live orders yet.</p> : orders.map((order) => <div key={order.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center"><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{order.title}</p><p className="text-xs text-muted-foreground">BD-{order.id.slice(0, 6).toUpperCase()} • {naira(order.total_naira)}</p></div><Badge variant={order.status === "delivered" ? "verified" : order.status === "disputed" ? "live" : "amber"}>{STATUS_LABEL[order.status] ?? order.status}</Badge>{live && <div className="flex flex-wrap gap-2">{order.status === "paid" && <Button size="sm" onClick={() => fulfil(order.id, "processing")}>Start</Button>}{order.status === "processing" && <Button size="sm" onClick={() => fulfil(order.id, "ready")}>Ready</Button>}{order.status === "ready" && <Button size="sm" onClick={() => createTracking(order.id)}><Truck /> Dispatch</Button>}</div>}</div>)}</div></Card>
