@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -9,6 +9,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Landmark,
+  Loader2,
+  LogIn,
   ShieldCheck,
   Store,
   Upload,
@@ -23,6 +25,7 @@ import { isSupabaseLive } from "@/lib/config";
 import { naira } from "@/lib/format";
 import { track } from "@/lib/analytics";
 import { CITIES } from "@/lib/taxonomy";
+import { formatNigerianPhone } from "@/lib/auth/validation";
 import { cn } from "@/lib/utils";
 
 /**
@@ -77,6 +80,34 @@ export default function SellPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [reference, setReference] = useState<string | null>(null);
+  // Live mode: know up-front whether the visitor is signed in, so nobody fills
+  // three steps (and picks documents) only to be bounced to /login and lose it.
+  const [authState, setAuthState] = useState<"checking" | "signed-out" | "signed-in">(isSupabaseLive() ? "checking" : "signed-in");
+
+  useEffect(() => {
+    if (!isSupabaseLive()) return;
+    const sb = supabaseBrowser();
+    let active = true;
+    (async () => {
+      const { data: { user } } = await sb.auth.getUser();
+      if (!active) return;
+      if (!user) {
+        setAuthState("signed-out");
+        return;
+      }
+      const { data: profile } = await sb.from("profiles").select("phone, city").eq("id", user.id).maybeSingle();
+      if (!active) return;
+      setFields((f) => ({
+        ...f,
+        phone: f.phone || formatNigerianPhone(profile?.phone),
+        city: profile?.city && (CITIES as readonly string[]).includes(profile.city) ? profile.city : f.city,
+      }));
+      setAuthState("signed-in");
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   function set<K extends keyof Fields>(key: K, value: string) {
     setFields((f) => ({ ...f, [key]: value }));
@@ -183,6 +214,7 @@ export default function SellPage() {
       if (roleErr) throw new Error(roleErr.message);
 
       setReference(`VD-${vendor.id.slice(0, 4).toUpperCase()}`);
+      router.refresh(); // role is now vendor — refresh server components
     } catch (e) {
       setError(e instanceof Error ? e.message : "Submission failed — try again.");
     } finally {
@@ -203,8 +235,36 @@ export default function SellPage() {
         </p>
         <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
           <Button asChild><Link href="/">Back to home</Link></Button>
-          <Button variant="outline" asChild><Link href="/admin">Preview seller dashboard</Link></Button>
+          <Button variant="outline" asChild><Link href="/vendor">Go to seller dashboard</Link></Button>
         </div>
+      </div>
+    );
+  }
+
+  if (authState === "checking") {
+    return (
+      <div className="container flex max-w-lg items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+      </div>
+    );
+  }
+
+  if (authState === "signed-out") {
+    return (
+      <div className="container max-w-md py-12">
+        <Card className="p-6 text-center">
+          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+            <Store className="h-6 w-6" />
+          </span>
+          <h1 className="mt-3 text-xl font-extrabold">Sell on Bale Drop</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Create a free seller account first — your application, documents and payouts are tied to it. Takes about 5 minutes in total.
+          </p>
+          <div className="mt-5 flex flex-col gap-2">
+            <Button asChild size="lg"><Link href="/signup?role=vendor&next=/sell">Create seller account</Link></Button>
+            <Button asChild variant="outline"><Link href="/login?next=/sell"><LogIn /> I already have an account</Link></Button>
+          </div>
+        </Card>
       </div>
     );
   }
@@ -215,7 +275,7 @@ export default function SellPage() {
       <h1 className="text-2xl font-extrabold tracking-tight md:text-3xl">Sell on Bale Drop</h1>
       <p className="mt-1 text-sm text-muted-foreground">
         Verified vendors sell 3x faster. Complete all 3 steps — takes about 5 minutes.
-        {isSupabaseLive() ? " You'll need an account to submit." : " Demo mode: submission is simulated."}
+        {isSupabaseLive() ? "" : " Demo mode: submission is simulated."}
       </p>
 
       {/* Stepper */}

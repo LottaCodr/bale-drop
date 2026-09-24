@@ -40,7 +40,8 @@ If you are using SQL Editor, run every file in numeric order, once:
 | 14 | `0014_payout_reference_rotation_claim.sql` | Atomically owns retry after a provider-reported failed transfer |
 | 15 | `0015_payout_settlement_guard.sql` | Prevents stale transfer events from settling a newer payout attempt |
 | 16 | `0016_pending_payment_expiry.sql` | Releases inventory from old ambiguous sessions without an authorization URL |
-| 17 | `supabase/seed.sql` | Optional demo auth users, vendors, listings, splits and one delivered order |
+| 17–21 | `0017` … `0021_auth_profile_onboarding.sql` | Admin grant, wishlists/analytics, notifications, support, OAuth-aware signup trigger |
+| last | `supabase/seed.sql` | Optional demo auth users (with identities + correct roles), vendors, listings, splits and one delivered order |
 
 Do not paste only `0004`: the later functions and policies depend on the
 later migrations. Verify that `payment_sessions`, `order_refunds`,
@@ -58,12 +59,61 @@ connecting Paystack.
 
 ## Step 4 — Auth configuration
 
-**Authentication** → **Providers** → **Email**:
+**Authentication → Providers → Email**
 
-- Turn **Confirm email** OFF while testing (instant demo signup).
-- Turn it ON before real users and add your dev + production callback URLs in
-  **URL Configuration**.
-- Optional: enable Google after adding its OAuth client credentials.
+- **Confirm email**: OFF for instant demo signups; ON before real users.
+- **Minimum password length**: set to **8** (the app enforces 8, following
+  NIST SP 800-63B; Supabase's default is 6).
+- Optional (Pro plan): enable **Leaked password protection**. The web app
+  already screens new passwords against Have I Been Pwned in the browser.
+
+**Authentication → URL Configuration**
+
+- **Site URL**: your production origin, e.g. `https://baledrop.ng`
+- **Redirect URLs**: add every origin you use, with a wildcard path:
+  - `http://localhost:3000/**`
+  - `https://your-preview-domain.vercel.app/**`
+  - `https://baledrop.ng/**`
+
+  Without this, confirmation, reset and Google links fall back to the Site URL
+  and new users land on the wrong page, signed out.
+
+**Authentication → Email Templates** (recommended). Links opened in a
+different browser than the one that signed up can't complete the PKCE flow.
+Token-hash links work everywhere; the app handles both at `/auth/confirm`.
+
+| Template | Link to use |
+|---|---|
+| Confirm signup | `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email&next=/welcome` |
+| Reset password | `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next=/reset-password` |
+| Magic link | `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=magiclink` |
+| Change email | `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email_change` |
+
+Keeping the default `{{ .ConfirmationURL }}` also works (it goes to
+`/auth/callback?code=…`). If the user opens it in another browser, they land on
+`/login` with a "Email confirmed — sign in" notice instead of an error.
+
+**Google (optional)**: Providers → Google → add the OAuth client ID/secret, and
+add `https://YOUR_PROJECT_REF.supabase.co/auth/v1/callback` as an authorised
+redirect URI in Google Cloud. Until it is enabled, the Google button shows a
+friendly "not enabled yet" message.
+
+### The auth flow at a glance
+
+```
+/signup ── email+password ──► (confirm email?) ──► /auth/confirm ─┐
+/login  ── password / demo / Google ───────────────────────────────┤
+                                                                   ▼
+                   first time & no phone/city? ──► /welcome (skippable, once)
+                                                                   ▼
+                  ?next= target ▸ else admin → /admin · vendor → /vendor · buyer → /
+```
+
+- Sellers who sign up go on to `/sell`. The wizard now checks sign-in *before*
+  step 1, so nobody loses a filled-in application.
+- Signed-in users who open `/login` or `/signup` are sent on to their `next`.
+- `/checkout`, `/orders`, `/account`, `/notifications`, `/vendor`, `/admin`,
+  `/welcome` require a session; the full path and query are kept in `next`.
 
 ## Step 5 — Copy public keys into the web app
 
@@ -209,6 +259,24 @@ without refresh.
 
 ## Demo logins (password for all: `BaleDrop123!`)
 
+`/login` shows one-tap **Buyer / Vendor / Admin** demo buttons while
+`NEXT_PUBLIC_DEMO_LOGINS` is not `false`. Set it to `false` for real launches.
+
+### "Invalid login credentials" on a demo account?
+
+Projects seeded before this fix have broken demo users. The old seed left
+`instance_id` NULL (GoTrue only finds users whose `instance_id` is the nil
+UUID), created no `auth.identities` row, left token columns NULL, and gave
+every demo profile the `buyer` role. Repair it, choosing **one** of:
+
+1. **SQL Editor**: paste and run `supabase/fix-demo-logins.sql`. It is
+   idempotent and ends with a check query where every row should say `ok = true`.
+2. **Admin API**: `SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… npm run seed:demo-users`
+
+Still failing? Check that the app's `NEXT_PUBLIC_SUPABASE_URL` points at the
+same project you repaired, and look at **Logs → Auth** for the real error.
+
+
 | Email | Role | Use for |
 |---|---|---|
 | `admin@baledrop.demo` | admin | Admin console |
@@ -220,7 +288,7 @@ without refresh.
 
 - Replace test keys with live keys only after webhook replay/idempotency tests.
 - Enable Point-in-Time Recovery and verify backups.
-- Set a real `SITE_URL`; turn email confirmation back ON.
+- Set a real `SITE_URL`; turn email confirmation back ON; set `NEXT_PUBLIC_DEMO_LOGINS=false`.
 - Deploy and test `order-action` for fulfillment, buyer confirmation and disputes before releasing escrow.
 - Deploy and monitor `bale-expiry` and `payout-reconcile`; they reconcile
   asynchronous Paystack refunds/transfers without duplicate money movement.

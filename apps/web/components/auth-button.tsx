@@ -2,17 +2,16 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { LogOut, User } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { supabaseBrowser } from "@/lib/supabase";
 import { isSupabaseLive } from "@/lib/config";
 import { hueFor } from "@bale-drop/database";
+import { hardNavigate } from "@/lib/auth/navigate";
 
 /** Header auth state: Sign in → avatar + sign out. Static in mock mode. */
 export function AuthButton() {
-  const router = useRouter();
   const [email, setEmail] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
 
@@ -34,7 +33,10 @@ export function AuthButton() {
 
   async function logout() {
     await supabaseBrowser().auth.signOut();
-    router.refresh();
+    setEmail(null);
+    // Full reload: leaves private pages and drops every in-memory trace of the
+    // previous user (router cache, realtime channels) — matters on shared phones.
+    hardNavigate("/");
   }
 
   if (!loaded) {
@@ -51,7 +53,7 @@ export function AuthButton() {
   }
   return (
     <span className="flex items-center gap-1" title={email}>
-      <Link href="/account/addresses" aria-label="Account and saved addresses">
+      <Link href="/account" aria-label="Your account">
         <Avatar initials={email.slice(0, 2).toUpperCase()} hue={hueFor(email)} size="sm" />
       </Link>
       <Button size="sm" variant="ghost" onClick={logout} aria-label="Sign out" className="px-2">

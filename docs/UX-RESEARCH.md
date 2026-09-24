@@ -80,3 +80,20 @@ live/gradeA-C) · `Card` · `Input` · `Progress` (a11y-complete) · `Avatar` +
 - **A11y:** contrast AA, visible focus rings, `role=progressbar/timer/radio`, 44px targets.
 - **Metrics:** split-claim rate, claim→pay conversion, checkout completion, dispute rate, vendor approval turnaround.
 - **Tests (post-launch):** A/B trust-badge placement, CTA copy ("Claim slot" vs "Join split"), countdown box vs line.
+
+## Auth & onboarding
+
+What the evidence says, and what we built from it:
+
+| Evidence | Decision |
+|---|---|
+| NIST SP 800-63B rev. 4: min 8 chars, allow long passphrases, **no composition rules**, allow paste, screen against breached/common passwords | 8-char minimum, 72-byte max (bcrypt), no symbol rules, local common-password blocklist + Have I Been Pwned k-anonymity check (only 5 hash chars leave the device; fails open offline) |
+| Masking causes typos on mobile; a reveal control beats a "confirm password" field (NN/g, Baymard, GOV.UK) | `PasswordInput` with show/hide on login, signup and reset; **no** confirm field |
+| Accessible toggles: real `<button type="button">`, keyboard operable, ≥44px, stable name + `aria-pressed` (screen readers handle changing state better than a changing name), announced change | Constant "Show password" label, `aria-pressed`, `aria-controls`, polite live region, focus + caret kept, native Edge reveal hidden |
+| Password managers may not save a field that was left `type="text"` | Field re-masks automatically on submit; correct `autocomplete` (`username`, `current-password`, `new-password`) |
+| Caps Lock is a top cause of "wrong password" | Inline Caps Lock warning |
+| Every extra signup field costs conversions; collect details progressively | Signup = role, name, email, password. Phone + city on a skippable one-time `/welcome` |
+| Vague errors frustrate; specific errors can leak account existence | Credential errors stay generic but actionable; "email not confirmed" offers a resend; raw server text is never shown |
+| Email links often open in another browser/app (PKCE breaks) | `/auth/confirm` supports token-hash links; PKCE mismatch → "Email confirmed, sign in" instead of an error |
+| Demo reviewers bounce if they can't get in | One-tap Buyer/Vendor/Admin demo sign-in (flagged by `NEXT_PUBLIC_DEMO_LOGINS`) |
+| Auth state changes must not leak the previous user's data | Full page load on sign-in/out, so router cache, realtime and stores restart fresh |
