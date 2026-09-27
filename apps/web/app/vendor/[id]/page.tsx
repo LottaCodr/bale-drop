@@ -26,7 +26,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   const store = await getVendorStorefront(id);
   if (!store) return { title: "Vendor" };
   return {
-    title: `${store.vendor.shopName} — ${store.vendor.city}`,
+    title: `${store.vendor.shopName} | ${store.vendor.city}`,
     description: `${store.vendor.shopName} on Bale Drop: ${store.products.length} listings, ${store.vendor.sales.toLocaleString()} sales and escrow-protected delivery.`,
   };
 }
@@ -83,7 +83,7 @@ export default async function VendorStorefrontPage({ params }: { params: Promise
           {[
             ["Listings", String(products.length)],
             ["Live splits", String(splits.length)],
-            ["From", Number.isFinite(cheapest) ? naira(cheapest) : "—"],
+            ["From", Number.isFinite(cheapest) ? naira(cheapest) : "Not available"],
             ["Verification", vendor.inspected ? "Inspected + ID" : vendor.verified ? "ID verified" : "Pending"],
           ].map(([label, value]) => (
             <div key={label} className="rounded-xl bg-muted/60 px-3 py-2">
@@ -117,7 +117,7 @@ export default async function VendorStorefrontPage({ params }: { params: Promise
         <section className="mt-8">
           <SectionHeader
             title="Live bale splits from this shop"
-            sub="Join with other buyers and pay per slot — auto-refund if it fills short."
+            sub="Join with other buyers and pay per slot. You get an automatic refund if it does not fill."
           />
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {splits.map((entry) => (
@@ -159,7 +159,7 @@ export default async function VendorStorefrontPage({ params }: { params: Promise
         />
         {repeatReviews.length === 0 ? (
           <Card className="flex items-center gap-3 p-4 text-sm text-muted-foreground">
-            <Star className="h-4 w-4 text-primary" /> No reviews yet — this shop is new to Bale Drop.
+            <Star className="h-4 w-4 text-primary" /> No reviews yet. This shop is new to Bale Drop.
           </Card>
         ) : (
           <div className="grid gap-4 md:grid-cols-2">

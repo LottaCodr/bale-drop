@@ -106,9 +106,9 @@ function ResetPasswordFlow() {
   if (!live) {
     return (
       <Card className="p-6 text-center">
-        <p className="font-bold">Demo mode</p>
-        <p className="mt-1 text-sm text-muted-foreground">Password recovery becomes available when Supabase is connected.</p>
-        <Button className="mt-4" asChild><Link href="/login">Back to sign in</Link></Button>
+        <p className="font-bold">Password recovery is temporarily unavailable</p>
+        <p className="mt-1 text-sm text-muted-foreground">Please try again later.</p>
+        <Button className="mt-4" asChild><Link href="/">Back to home</Link></Button>
       </Card>
     );
   }

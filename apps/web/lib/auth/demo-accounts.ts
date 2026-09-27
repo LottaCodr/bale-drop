@@ -21,5 +21,5 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
 ];
 
 export function demoLoginsEnabled(): boolean {
-  return process.env.NEXT_PUBLIC_DEMO_LOGINS !== "false";
+  return process.env.NEXT_PUBLIC_DEMO_LOGINS === "true" && process.env.NODE_ENV !== "production";
 }

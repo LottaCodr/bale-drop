@@ -82,7 +82,7 @@ export function checkPassword(password: string, context: PasswordContext = {}): 
   if (password.trim().length === 0) return result("A password can't be only spaces.");
 
   const lower = password.toLowerCase();
-  if (COMMON.has(lower)) return result("That's one of the most common passwords — pick something less guessable.");
+  if (COMMON.has(lower)) return result("That's one of the most common passwords. Pick something less guessable.");
   if (uniqueRatio(password) < 0.3 || isSequential(password)) return result("Avoid repeated or sequential characters like 11111111 or abcdefgh.");
 
   const emailLocal = context.email?.split("@")[0]?.toLowerCase();

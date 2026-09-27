@@ -38,9 +38,9 @@ interface AuthLikeError {
 
 const MESSAGES: Record<AuthErrorKind, string> = {
   invalid_credentials: "That email and password don't match. Check for typos, or reset your password.",
-  email_not_confirmed: "Confirm your email first — we sent you a link when you signed up.",
+  email_not_confirmed: "Confirm your email first. We sent you a link when you signed up.",
   user_already_exists: "An account with this email already exists. Sign in instead, or reset your password.",
-  weak_password: "Choose a stronger password — at least 8 characters, ideally a short phrase.",
+  weak_password: "Choose a stronger password with at least 8 characters, ideally a short phrase.",
   rate_limited: "Too many attempts. Wait a minute, then try again.",
   email_rate_limited: "We've sent a few emails already. Wait a minute before asking for another.",
   provider_disabled: "That sign-in option isn't enabled yet. Use email and password instead.",

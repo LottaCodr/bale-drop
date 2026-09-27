@@ -12,7 +12,6 @@ import { isSupabaseLive } from "@/lib/config";
 import { naira } from "@/lib/format";
 import { supabaseBrowser } from "@/lib/supabase";
 import { invokeOperation } from "@/lib/operations";
-import { ORDER_STEPS, ORDERS, type Order } from "@/lib/mock";
 import { useCartStore } from "@/lib/store/cart-store";
 import { track } from "@/lib/analytics";
 import { mapProductRow, hueFor, type Database } from "@bale-drop/database";
@@ -118,14 +117,16 @@ function toViewOrder(
   };
 }
 
+const ORDER_STEPS = ["Ordered", "Paid (escrow)", "Processing", "In transit", "Delivered"] as const;
+
 const TIMELINE_LABEL: Record<string, string> = {
-  pending_payment: "Order created — awaiting payment",
+  pending_payment: "Order created, awaiting payment",
   paid: "Payment received into escrow",
   processing: "Vendor started packing your order",
   ready: "Ready to ship",
-  in_transit: "Handed to the courier — tracking live",
-  delivered: "Delivered — confirm to release escrow",
-  disputed: "Dispute opened — escrow paused",
+  in_transit: "Handed to the courier, tracking live",
+  delivered: "Delivered, confirm to release escrow",
+  disputed: "Dispute opened, escrow paused",
   refunded: "Refunded to your payment method",
   cancelled: "Order cancelled",
 };
@@ -136,7 +137,6 @@ export function OrdersClient() {
   const [loading, setLoading] = useState(live);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [confirmedDemo, setConfirmedDemo] = useState<string[]>([]);
   const [disputeOrder, setDisputeOrder] = useState<string | null>(null);
   const [disputeReason, setDisputeReason] = useState("Item not as described");
   const [disputeDescription, setDisputeDescription] = useState("");
@@ -150,23 +150,7 @@ export function OrdersClient() {
 
   useEffect(() => {
     if (!live) {
-      setOrders(ORDERS.map((order: Order) => ({
-        id: order.id,
-        title: order.title,
-        vendor: order.vendor,
-        vendorId: "",
-        productId: null,
-        amount: order.amount,
-        date: order.date,
-        status: order.status === "processing" ? "processing" : order.status === "in_transit" ? "in_transit" : "delivered",
-        escrow: order.status === "delivered" ? "released" : "held",
-        tracking: order.tracking,
-        trackingUrl: null,
-        step: order.step,
-        hue: order.hue,
-        lines: [{ productId: null, title: order.title, qty: 1, unit: order.amount }],
-        timeline: [],
-      })));
+      setOrders([]);
       setLoading(false);
       return;
     }
@@ -312,11 +296,11 @@ export function OrdersClient() {
       return;
     }
     track("reorder", { order_id: order.id, items: added, value: order.amount });
-    setNotice(`${added} item${added === 1 ? "" : "s"} added to your cart — prices will be confirmed at checkout.`);
+    setNotice(`${added} item${added === 1 ? "" : "s"} added to your cart. Prices will be confirmed at checkout.`);
   }
 
   async function submitReview(order: ViewOrder) {
-    if (!live) { setReviewedOrders((current) => [...current, order.id]); setReviewOrder(null); setNotice("Thanks — your review was recorded in the demo."); return; }
+    if (!live) { setError("Reviews are temporarily unavailable."); return; }
     setError(null); setNotice(null); setActionBusy(`review-${order.id}`);
     const { error: actionError } = await invokeOperation("review-create", {
       order_id: order.id, rating: reviewRating, body: reviewBody, product_id: order.productId,
@@ -374,7 +358,7 @@ export function OrdersClient() {
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight">My orders</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Payment confirmation is webhook-driven. Escrow stays held until you confirm delivery.
+            Track your deliveries and confirm when they arrive. You can report a problem from an order.
           </p>
         </div>
         {orders.length > 0 && (
@@ -393,13 +377,13 @@ export function OrdersClient() {
 
       <div className="mt-6 flex flex-col gap-4">
         {orders.map((order) => {
-          const isDemoConfirmed = confirmedDemo.includes(order.id) || order.status === "delivered";
-          const step = isDemoConfirmed && !live ? 4 : order.step;
-          const status = isDemoConfirmed && !live ? "delivered" : order.status;
+          const isDelivered = order.status === "delivered";
+          const step = order.step;
+          const status = order.status;
           return (
             <Card key={order.id} className="overflow-hidden">
               <div className="flex items-center justify-between gap-2 border-b bg-muted/50 px-4 py-3">
-                <p className="text-sm font-bold">{live ? `BD-${order.id.slice(0, 6).toUpperCase()}` : order.id} <span className="font-normal text-muted-foreground">• {order.date}</span></p>
+                <p className="text-sm font-bold">{`BD-${order.id.slice(0, 6).toUpperCase()}`} <span className="font-normal text-muted-foreground">• {order.date}</span></p>
                 <Badge variant={STATUS_BADGE[status]}>{STATUS_LABEL[status]}</Badge>
               </div>
               <div className="flex flex-col gap-4 p-4">
@@ -456,11 +440,8 @@ export function OrdersClient() {
                   )}
                 </div>
 
-                {order.tracking && !isDemoConfirmed && <div className="flex items-center gap-2 rounded-xl bg-muted/60 px-3 py-2.5 text-sm"><Truck className="h-4 w-4 shrink-0 text-primary" /><span className="font-mono font-semibold">{order.tracking}</span>{order.trackingUrl ? <Button variant="link" size="sm" className="ml-auto h-auto p-0" asChild><a href={order.trackingUrl} target="_blank" rel="noreferrer">Track package</a></Button> : <span className="ml-auto text-xs text-muted-foreground">Tracking updates soon</span>}</div>}
+                {order.tracking && !isDelivered && <div className="flex items-center gap-2 rounded-xl bg-muted/60 px-3 py-2.5 text-sm"><Truck className="h-4 w-4 shrink-0 text-primary" /><span className="font-mono font-semibold">{order.tracking}</span>{order.trackingUrl ? <Button variant="link" size="sm" className="ml-auto h-auto p-0" asChild><a href={order.trackingUrl} target="_blank" rel="noreferrer">Track package</a></Button> : <span className="ml-auto text-xs text-muted-foreground">Tracking updates soon</span>}</div>}
 
-                {!live && !isDemoConfirmed && (
-                  <div className="flex flex-col gap-2 sm:flex-row"><Button className="flex-1" onClick={() => setConfirmedDemo((current) => [...current, order.id])}><Check /> Confirm delivery</Button><Button variant="outline" className="flex-1" onClick={() => setNotice("Demo preview: connect Supabase to open a persisted dispute.")}><Info /> Open dispute</Button></div>
-                )}
                 {live && order.escrow === "held" && !["delivered", "refunded", "cancelled"].includes(order.status) && (
                   <div className="flex flex-col gap-2">
                     <p className="flex items-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-2.5 text-sm font-semibold text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200"><ShieldCheck className="h-4 w-4" /> Payment is held in escrow. Delivery confirmation is protected.</p>
@@ -469,12 +450,12 @@ export function OrdersClient() {
                       <Button variant="outline" className="flex-1" onClick={() => setDisputeOrder(disputeOrder === order.id ? null : order.id)}><Info /> Open dispute</Button>
                     </div>
                     {order.status === "paid" && <p className="text-xs text-muted-foreground">Your vendor must begin fulfillment before delivery can be confirmed.</p>}
-                    <p className="text-xs text-muted-foreground">Ignore this and escrow auto-releases 48 hours after delivery — you can still open a dispute before then.</p>
+                    <p className="text-xs text-muted-foreground">Ignore this and escrow auto-releases 48 hours after delivery. You can still open a dispute before then.</p>
                     {disputeOrder === order.id && <div className="rounded-xl border bg-muted/40 p-3"><label className="mb-1.5 block text-sm font-semibold" htmlFor={`reason-${order.id}`}>Reason</label><select id={`reason-${order.id}`} value={disputeReason} onChange={(event) => setDisputeReason(event.target.value)} className="h-10 w-full rounded-xl border border-input bg-background px-3 text-sm"><option>Item not as described</option><option>Order never arrived</option><option>Damaged or incomplete</option><option>Wrong item received</option></select><Textarea className="mt-2" placeholder="Tell us what happened" value={disputeDescription} onChange={(event) => setDisputeDescription(event.target.value)} /><label className="mt-2 flex cursor-pointer items-center gap-2 rounded-xl border border-dashed p-3 text-sm"><Upload className="h-4 w-4 text-primary" /><span>{evidenceFiles.length ? `${evidenceFiles.length} evidence file${evidenceFiles.length > 1 ? "s" : ""} selected` : "Attach photos or PDF evidence (optional)"}</span><input type="file" accept="image/*,.pdf" multiple className="sr-only" onChange={(event) => setEvidenceFiles(Array.from(event.target.files ?? []).slice(0, 5))} /></label><div className="mt-2 flex justify-end gap-2"><Button variant="ghost" size="sm" onClick={() => setDisputeOrder(null)}>Cancel</Button><Button size="sm" onClick={() => openDispute(order.id)} disabled={actionBusy === order.id}>{actionBusy === order.id ? "Opening…" : "Submit dispute"}</Button></div></div>}
                   </div>
                 )}
-                {isDemoConfirmed && <p className="flex items-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-2.5 text-sm font-semibold text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200"><Check className="h-4 w-4" /> Delivered &amp; escrow released. Thanks for shopping!</p>}
-                {isDemoConfirmed && !reviewedOrders.includes(order.id) && <div className="rounded-xl border bg-muted/40 p-3"><div className="flex items-center justify-between gap-2"><p className="text-sm font-bold">How was this order?</p>{reviewOrder !== order.id && <Button variant="outline" size="sm" onClick={() => setReviewOrder(order.id)}>Leave a review</Button>}</div>{reviewOrder === order.id && <div className="mt-3"><div className="flex items-center gap-1" aria-label="Rating"><span className="mr-2 text-sm font-semibold">Rating</span>{[1, 2, 3, 4, 5].map((value) => <button key={value} type="button" aria-label={`${value} star${value > 1 ? "s" : ""}`} onClick={() => setReviewRating(value)} className={cn("text-xl leading-none", value <= reviewRating ? "text-amber-500" : "text-muted-foreground")}>★</button>)}</div><Textarea className="mt-2" placeholder="Share a helpful note (optional)" value={reviewBody} onChange={(event) => setReviewBody(event.target.value)} /><div className="mt-2 flex justify-end gap-2"><Button variant="ghost" size="sm" onClick={() => setReviewOrder(null)}>Cancel</Button><Button size="sm" onClick={() => submitReview(order)} disabled={actionBusy === `review-${order.id}`}>{actionBusy === `review-${order.id}` ? <Loader2 className="animate-spin" /> : <Check />} Publish review</Button></div></div>}</div>}
+                {isDelivered && <p className="flex items-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-2.5 text-sm font-semibold text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200"><Check className="h-4 w-4" /> Delivered &amp; escrow released. Thanks for shopping!</p>}
+                {isDelivered && !reviewedOrders.includes(order.id) && <div className="rounded-xl border bg-muted/40 p-3"><div className="flex items-center justify-between gap-2"><p className="text-sm font-bold">How was this order?</p>{reviewOrder !== order.id && <Button variant="outline" size="sm" onClick={() => setReviewOrder(order.id)}>Leave a review</Button>}</div>{reviewOrder === order.id && <div className="mt-3"><div className="flex items-center gap-1" aria-label="Rating"><span className="mr-2 text-sm font-semibold">Rating</span>{[1, 2, 3, 4, 5].map((value) => <button key={value} type="button" aria-label={`${value} star${value > 1 ? "s" : ""}`} onClick={() => setReviewRating(value)} className={cn("text-xl leading-none", value <= reviewRating ? "text-amber-500" : "text-muted-foreground")}>★</button>)}</div><Textarea className="mt-2" placeholder="Share a helpful note (optional)" value={reviewBody} onChange={(event) => setReviewBody(event.target.value)} /><div className="mt-2 flex justify-end gap-2"><Button variant="ghost" size="sm" onClick={() => setReviewOrder(null)}>Cancel</Button><Button size="sm" onClick={() => submitReview(order)} disabled={actionBusy === `review-${order.id}`}>{actionBusy === `review-${order.id}` ? <Loader2 className="animate-spin" /> : <Check />} Publish review</Button></div></div>}</div>}
               </div>
             </Card>
           );

@@ -67,10 +67,10 @@ export function CountdownBoxes({ expiresAt }: { expiresAt: number }) {
         { v: pad(left.seconds), l: "sec" },
       ]
     : [
-        { v: "--", l: "days" },
-        { v: "--", l: "hrs" },
-        { v: "--", l: "min" },
-        { v: "--", l: "sec" },
+        { v: "…", l: "days" },
+        { v: "…", l: "hrs" },
+        { v: "…", l: "min" },
+        { v: "…", l: "sec" },
       ];
   return (
     <div className="grid grid-cols-4 gap-2" role="timer" aria-label="Time left to join this split">

@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, Check, LifeBuoy, Loader2, Mail, MessageSquare, ShieldCheck } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { AlertCircle, Check, LifeBuoy, Loader2, MessageSquare, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ServiceUnavailable } from "@/components/service-unavailable";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { supabaseBrowser } from "@/lib/supabase";
@@ -65,6 +65,8 @@ export default function SupportPage() {
     }
   }
 
+  if (!isSupabaseLive()) return <ServiceUnavailable title="Support is temporarily unavailable" description="We cannot receive messages right now. Please try again later." />;
+
   return (
     <div className="container max-w-3xl py-8">
       <header>
@@ -73,8 +75,7 @@ export default function SupportPage() {
         </span>
         <h1 className="mt-3 text-2xl font-extrabold tracking-tight sm:text-3xl">Talk to a human</h1>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground sm:text-base">
-          Order, delivery, refund or vendor question — send it here and it lands in a queue we work
-          every day. We reply to the email you give us, usually within one working day.
+          Order, delivery, refund or vendor question? Send us a message using the form below.
         </p>
       </header>
 
@@ -85,9 +86,7 @@ export default function SupportPage() {
           </span>
           <h2 className="mt-3 text-lg font-bold">Message received</h2>
           <p className="mt-1.5 text-sm text-muted-foreground">
-            We&apos;ll reply to <span className="font-semibold text-foreground">{form.email}</span>. If it is
-            about a live order or an escrow release that is about to expire, open the dispute from the
-            order as well — that pauses the payment clock.
+            We&apos;ll reply to <span className="font-semibold text-foreground">{form.email}</span>. For an urgent order issue, open a dispute from the order as well.
           </p>
           <div className="mt-4 flex flex-col justify-center gap-2 sm:flex-row">
             <Button asChild variant="outline">
@@ -100,29 +99,18 @@ export default function SupportPage() {
         </Card>
       ) : (
         <>
-          <div className="mt-6 grid gap-3 sm:grid-cols-2">
+          <div className="mt-6">
             <Card className="p-4">
               <h2 className="flex items-center gap-2 text-sm font-bold">
                 <ShieldCheck className="h-4 w-4 text-primary" /> Money problem?
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Open the dispute from the order first — that freezes escrow release while we review
+                Open a dispute from the order first. This pauses escrow release while we review
                 evidence from both sides.
               </p>
               <Link href="/orders" className="mt-2 inline-block text-sm font-semibold text-primary hover:underline">
                 Disputes &amp; refunds →
               </Link>
-            </Card>
-            <Card className="p-4">
-              <h2 className="flex items-center gap-2 text-sm font-bold">
-                <Mail className="h-4 w-4 text-primary" /> Direct email
-              </h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                support@baledrop.demo — same queue, useful if you cannot sign in right now.
-              </p>
-              <Badge variant="outline" className="mt-2">
-                Median first reply: under 1 working day
-              </Badge>
             </Card>
           </div>
 

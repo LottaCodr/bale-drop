@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { BaleSplitCard, ProductCard, SectionHeader, VendorCard } from "@/components/commerce";
 import { RecentlyViewedRail } from "@/components/recently-viewed";
 import { SearchTracker } from "@/components/search-tracker";
+import { ServiceUnavailable } from "@/components/service-unavailable";
+import { isSupabaseLive } from "@/lib/config";
 import { searchCatalog } from "@/lib/data";
 import { CATEGORIES, CITIES, GRADES, SORT_LABELS, SORTS, type SortKey } from "@/lib/taxonomy";
 import {
@@ -69,9 +71,12 @@ function FilterChip({
 }
 
 export default async function SearchPage({ searchParams }: { searchParams: Promise<RawSearchParams> }) {
+  if (!isSupabaseLive()) return <ServiceUnavailable title="Search is temporarily unavailable" />;
   const raw = await searchParams;
   const filters = parseSearchParams(raw);
-  const { results, total, categoryCounts, vendors, splits } = await searchCatalog({ ...filters, limit: 40 });
+  const data = await searchCatalog({ ...filters, limit: 40 });
+  if (!data) return <ServiceUnavailable title="Search is temporarily unavailable" />;
+  const { results, total, categoryCounts, vendors, splits } = data;
   const filterCount = activeFilterCount(filters);
   const liveSplits = splits.slice(0, 3);
   const vendorById = new Map(vendors.map((vendor) => [vendor.id, vendor]));
@@ -283,7 +288,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
             <section className="mt-10">
               <SectionHeader
                 title="Live splits you can join now"
-                sub="Claim a slot before the countdown ends — auto-refund if a split doesn't fill."
+                sub="Claim a slot before the countdown ends. You get an automatic refund if a split doesn't fill."
                 href="/search?kind=bale"
                 linkLabel="See all splits"
               />

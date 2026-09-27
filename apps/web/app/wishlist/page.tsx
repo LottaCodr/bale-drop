@@ -4,6 +4,8 @@ import Link from "next/link";
 import { ArrowRight, Heart, Loader2, ShoppingBag, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ServiceUnavailable } from "@/components/service-unavailable";
+import { isSupabaseLive } from "@/lib/config";
 import { Card } from "@/components/ui/card";
 import { ProductArtFallback } from "@/components/product-art-fallback";
 import { GradeBadge } from "@/components/commerce";
@@ -23,6 +25,8 @@ export default function WishlistPage() {
   const items = useWishlistStore((state) => state.items);
   const remove = useWishlistStore((state) => state.remove);
   const addToCart = useCartStore((state) => state.add);
+
+  if (!isSupabaseLive()) return <ServiceUnavailable title="Saved items are temporarily unavailable" />;
 
   if (!mounted) {
     return (

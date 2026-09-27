@@ -14,7 +14,6 @@ import { RecentlyViewedRail } from "@/components/recently-viewed";
 import { ShareButton } from "@/components/share-button";
 import { ViewTracker } from "@/components/view-tracker";
 import {
-  EscrowNote,
   GradeBadge,
   ProductArt,
   ProductCard,
@@ -75,7 +74,7 @@ export default async function ListingPage({ params }: { params: Promise<{ id: st
       </nav>
 
       <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
-        {/* Gallery */}
+        {/* Product illustration — no photo gallery until real images are wired up */}
         <div>
           <div className="relative overflow-hidden rounded-2xl border">
             <ProductArt hue={product.hue} category={product.category} className="aspect-[4/3] w-full" iconClassName="h-28 w-28" />
@@ -86,15 +85,8 @@ export default async function ListingPage({ params }: { params: Promise<{ id: st
             </div>
             <FavoriteButton product={product} vendor={vendor} className="absolute right-3 top-3" />
           </div>
-          <div className="mt-3 grid grid-cols-4 gap-3" aria-hidden="true">
-            {[0, 40, 80, 120].map((shift) => (
-              <div key={shift} className="overflow-hidden rounded-xl border">
-                <ProductArt hue={(product.hue + shift) % 360} category={product.category} className="aspect-square w-full" iconClassName="h-8 w-8" />
-              </div>
-            ))}
-          </div>
           <p className="mt-2 text-xs text-muted-foreground">
-            Photos are representative art in demo mode; vendors upload real bale photos in live mode.
+            Illustration only. This is not a photo of the item.
           </p>
 
           {/* Details (desktop: under gallery) */}
@@ -103,11 +95,10 @@ export default async function ListingPage({ params }: { params: Promise<{ id: st
             <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
               {[
                 ["Grade", `Grade ${product.grade} (verified)`],
-                ["Weight", bale?.bale.weight ?? "—"],
+                ["Weight", bale?.bale.weight ?? "Not specified"],
                 ["Approx. pieces", bale?.bale.pieces ?? product.pieces ?? "Single item"],
                 ["Ships from", product.city],
                 ["Category", product.category],
-                ["Listing ID", `BD-${product.id.slice(0, 8).toUpperCase()}`],
               ].map(([k, v]) => (
                 <div key={k} className="rounded-xl bg-muted/60 px-3 py-2">
                   <dt className="text-xs text-muted-foreground">{k}</dt>
@@ -172,17 +163,12 @@ export default async function ListingPage({ params }: { params: Promise<{ id: st
             </div>
           </Card>
 
-          <div className="mt-3 flex items-start gap-2 text-[13px] text-muted-foreground">
-            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-            <p>
-              Covered by Bale Drop escrow.{" "}
-              {bale ? "Auto-refunded if the split doesn't fill." : "Full refund if item isn't as described."}
+          {!bale && (
+            <p className="mt-3 flex items-start gap-2 text-[13px] text-muted-foreground">
+              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+              Escrow protected. If the item isn&apos;t as described, you can open a dispute.
             </p>
-          </div>
-
-          <div className="mt-4">
-            <EscrowNote />
-          </div>
+          )}
 
           {/* Vendor quick card */}
           <div className="mt-4">
@@ -197,7 +183,7 @@ export default async function ListingPage({ params }: { params: Promise<{ id: st
         <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
           {[
             ["Grade", `Grade ${product.grade}`],
-            ["Weight", bale?.bale.weight ?? "—"],
+            ["Weight", bale?.bale.weight ?? "Not specified"],
             ["Approx. pieces", bale?.bale.pieces ?? "Single item"],
             ["Ships from", product.city],
           ].map(([k, v]) => (
@@ -210,11 +196,16 @@ export default async function ListingPage({ params }: { params: Promise<{ id: st
         {product.description && <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{product.description}</p>}
       </Card>
 
+      <details className="mt-4 text-xs text-muted-foreground">
+        <summary className="cursor-pointer font-semibold">Listing reference</summary>
+        <p className="mt-1">BD-{product.id.slice(0, 8).toUpperCase()}. Include this when contacting support.</p>
+      </details>
+
       {/* Reviews */}
       <div className="mt-8">
         <SectionHeader
           title="Buyer reviews"
-          sub="Only buyers with delivered orders can review — no seeded praise."
+          sub="Only buyers with delivered orders can review. No seeded praise."
         />
         {reviews.count === 0 ? (
           <Card className="p-6 text-center">

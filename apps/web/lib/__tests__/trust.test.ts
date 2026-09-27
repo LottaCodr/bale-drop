@@ -42,7 +42,7 @@ describe("support", () => {
     for (const topic of SUPPORT_TOPICS) expect(TOPIC_LABELS[topic]).toBeTruthy();
   });
 
-  it("no-ops in demo mode so the form still works without a database", async () => {
+  it("rejects support submissions when the backend is unavailable", async () => {
     await expect(
       sendSupportMessage({
         name: "Adaeze",
@@ -51,7 +51,7 @@ describe("support", () => {
         body: "My bale arrived with fewer pieces than the listing promised.",
         orderRef: "BD-2019",
       })
-    ).resolves.toBeUndefined();
+    ).rejects.toThrow("Support is temporarily unavailable");
     await expect(listSupportMessages()).resolves.toEqual([]);
   });
 });

@@ -22,6 +22,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { ProductArtFallback } from "@/components/product-art-fallback";
+import { ServiceUnavailable } from "@/components/service-unavailable";
 import { EscrowNote } from "@/components/commerce";
 import { isSupabaseLive } from "@/lib/config";
 import { naira } from "@/lib/format";
@@ -102,7 +103,6 @@ function CheckoutExperience() {
   const live = isSupabaseLive();
   const mounted = useHasMounted();
   const reference = searchParams.get("reference") || searchParams.get("trxref");
-  const demoPaid = !live && searchParams.get("demo_paid") === "1";
 
   const lines = useCartStore((state) => state.lines);
   const subtotal = useCartStore(selectSubtotal);
@@ -243,15 +243,11 @@ function CheckoutExperience() {
   const total = subtotal + fee - subsidy;
   const repricedNotice = useMemo(() => priceChanges?.repriced ?? [], [priceChanges]);
 
-  if (demoPaid) {
-    return <PaymentSuccess amount={total} orderIds={["2103"]} isSlot={false} />;
-  }
 
   async function pay() {
     setPaymentError(null);
     if (!live) {
-      setPaymentState("processing");
-      router.push(`/checkout?demo_paid=1`);
+      setPaymentError("Checkout is temporarily unavailable. Please try again later.");
       return;
     }
     if (lines.length === 0) {
@@ -355,8 +351,8 @@ function CheckoutExperience() {
         </h1>
         <p className="mt-2 text-muted-foreground">
           {returnState === "failed"
-            ? "No order was marked paid. Your cart is still saved — you can retry with another Paystack method."
-            : "Paystack sent you back safely. We are waiting for the signed webhook before we mark escrow as held — please don’t pay twice."}
+            ? "No order was marked paid. Your cart is still saved. You can retry with another Paystack method."
+            : "We’re confirming your payment. Please check your orders for updates, and don’t pay again while confirmation is pending."}
         </p>
         <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
           <Button asChild>
@@ -369,6 +365,8 @@ function CheckoutExperience() {
       </div>
     );
   }
+
+  if (!live) return <ServiceUnavailable title="Checkout is temporarily unavailable" description="Your cart is saved. Please try again later." />;
 
   if (!mounted) {
     return (
@@ -404,7 +402,7 @@ function CheckoutExperience() {
           <h1 className="text-2xl font-extrabold tracking-tight">Checkout</h1>
           <p className="mt-1 text-sm text-muted-foreground">Cart → delivery → Pay. One page, no surprises.</p>
         </div>
-        {live && <Badge variant="outline">Test-mode checkout</Badge>}
+        {live && <Badge variant="outline">Paystack checkout</Badge>}
       </div>
 
       {paymentError && (
@@ -419,7 +417,7 @@ function CheckoutExperience() {
       )}
       {repricedNotice.map((change) => (
         <p key={change.productId} role="status" className="mt-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm dark:bg-amber-950/20">
-          <b>{change.title}</b> changed from {naira(change.from)} to {naira(change.to)} — your total below already
+          <b>{change.title}</b> changed from {naira(change.from)} to {naira(change.to)}. Your total below already
           reflects it.
         </p>
       ))}
@@ -604,12 +602,12 @@ function CheckoutExperience() {
               <Truck className="h-3.5 w-3.5 text-primary" /> Delivery to {shipping.city || prefsCity} in {delivery === "express" ? "1 day" : "2–4 days"}
             </p>
           </Card>
-          <p className="mt-3 flex items-start gap-2 text-xs text-muted-foreground">
-            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />{" "}
-            {live
-              ? "You’ll leave Bale Drop for Paystack’s secure test checkout. We only show success after the signed webhook confirms payment."
-              : "Demo mode: no payment leaves this browser."}
-          </p>
+          {live && (
+            <p className="mt-3 flex items-start gap-2 text-xs text-muted-foreground">
+              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              You’ll continue to Paystack to complete your payment. We’ll confirm your order when payment is verified.
+            </p>
+          )}
         </div>
       </div>
     </div>

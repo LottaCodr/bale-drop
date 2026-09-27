@@ -329,7 +329,7 @@ const ESCROW_STEPS = [
     icon: CreditCard,
     step: "Step 1",
     title: "You pay into escrow",
-    body: "Money leaves your account but is held by Bale Drop — never sent straight to the vendor.",
+    body: "Money leaves your account but is held by Bale Drop, not sent straight to the vendor.",
   },
   {
     icon: Truck,
@@ -341,7 +341,7 @@ const ESCROW_STEPS = [
     icon: ShieldCheck,
     step: "Step 3",
     title: "Money is released",
-    body: "Vendor gets paid only after you confirm — or auto-release 48hrs after delivery. Disputes pause payout.",
+    body: "Vendor gets paid after you confirm, or automatically 48 hours after delivery. Disputes pause payout.",
   },
 ] as const;
 

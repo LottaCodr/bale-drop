@@ -8,9 +8,8 @@ import { isSupabaseLive } from "@/lib/config";
  * launch checklist calls before/after a deploy.
  *
  * Reports *capability*, not just "200 OK":
- *  - `mode: "demo"` means no Supabase env is present, so the storefront is
- *    serving the bundled demo dataset. That is intended for prototypes and is a
- *    launch blocker for production, which is why it is not reported as healthy.
+ *  - `mode: "unavailable"` means the backend is not configured. Customer
+ *    transactions are disabled and the catalog is not populated with sample data.
  *  - `mode: "live"` probes the database with a cheap, RLS-visible read.
  *
  * Never returns secrets, counts of private rows, or stack traces.
@@ -25,13 +24,13 @@ export async function GET() {
     return NextResponse.json(
       {
         status: "degraded",
-        mode: "demo",
-        reason: "NEXT_PUBLIC_SUPABASE_URL / ANON_KEY are not configured — serving the demo dataset.",
+        mode: "unavailable",
+        reason: "The backend is not configured. Commerce and account features are unavailable.",
         checks: { database: "not_configured", payments: "not_configured" },
         tookMs: Date.now() - startedAt,
         time: new Date().toISOString(),
       },
-      { status: 200, headers: { "cache-control": "no-store" } }
+      { status: 503, headers: { "cache-control": "no-store" } }
     );
   }
 

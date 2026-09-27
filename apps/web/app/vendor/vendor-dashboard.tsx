@@ -12,7 +12,6 @@ import { naira } from "@/lib/format";
 import { invokeOperation } from "@/lib/operations";
 import { supabaseBrowser } from "@/lib/supabase";
 import { CITIES } from "@/lib/taxonomy";
-import { PRODUCTS } from "@/lib/mock";
 import type { Database } from "@bale-drop/database";
 
 // Vendor listing categories exclude the storefront-only "All" chip.
@@ -27,8 +26,8 @@ type ItemRow = Database["public"]["Tables"]["order_items"]["Row"];
 type FormState = { title: string; category: string; grade: "A" | "B" | "C"; kind: "single" | "bale"; price: string; qty: string; city: string; pieces: string; description: string };
 const EMPTY_FORM: FormState = { title: "", category: "Bales", grade: "A", kind: "bale", price: "", qty: "1", city: "Lagos", pieces: "", description: "" };
 
-export function VendorDashboard({ demo }: { demo: boolean }) {
-  const live = isSupabaseLive() && !demo;
+export function VendorDashboard() {
+  const live = isSupabaseLive();
   const [vendor, setVendor] = useState<VendorRow | null>(null);
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [orders, setOrders] = useState<(OrderRow & { title: string })[]>([]);
@@ -39,6 +38,7 @@ export function VendorDashboard({ demo }: { demo: boolean }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [trackingNumbers, setTrackingNumbers] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     if (!live) {
@@ -90,7 +90,7 @@ export function VendorDashboard({ demo }: { demo: boolean }) {
 
   async function createProduct() {
     setError(null); setNotice(null);
-    if (!live) { setNotice("Demo preview: connect Supabase to submit this listing."); return; }
+    if (!live) { setNotice("Listings cannot be submitted right now. Please try again later."); return; }
     if (!vendor || form.title.trim().length < 4 || Number(form.price) <= 0) { setError("Add a title and a valid price."); return; }
     setSaving(true);
     try {
@@ -118,25 +118,21 @@ export function VendorDashboard({ demo }: { demo: boolean }) {
     finally { setSaving(false); }
   }
 
-  async function fulfil(orderId: string, status: "processing" | "ready" | "in_transit") {
+  async function fulfil(orderId: string, status: "processing" | "ready" | "in_transit", trackingNumber?: string) {
     setError(null); setNotice(null);
-    const { error: actionError } = await invokeOperation("order-action", { action: "fulfillment_status", order_id: orderId, status, tracking_number: status === "in_transit" ? `BDX-${orderId.slice(0, 8).toUpperCase()}` : undefined, tracking_url: status === "in_transit" ? `https://track.baledrop.demo/BDX-${orderId.slice(0, 8).toUpperCase()}` : undefined });
+    if (status === "in_transit" && !trackingNumber?.trim()) {
+      setError("Enter the courier tracking number before dispatching.");
+      return;
+    }
+    const { error: actionError } = await invokeOperation("order-action", { action: "fulfillment_status", order_id: orderId, status, tracking_number: trackingNumber?.trim() });
     if (actionError) { setError(actionError); return; }
     setNotice("Order status updated."); await load();
   }
 
-  async function createTracking(orderId: string) {
-    const { error: actionError } = await invokeOperation("logistics-create", { order_id: orderId, provider: "bale_drop_sandbox" });
-    if (actionError) { setError(actionError); return; }
-    setNotice("Sandbox tracking created."); await load();
-  }
-
-  const demoProducts = PRODUCTS.slice(0, 4);
-  const visibleProducts = live ? products : demoProducts.map((product) => ({ id: product.id, title: product.title, status: "active", price_naira: product.price, category: product.category, grade: product.grade, kind: product.isBale ? "bale" : "single", qty: 1 } as unknown as ProductRow));
 
   return (
     <div className="container max-w-6xl py-6">
-      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start"><div><Badge variant="inspected"><StoreIcon /> Vendor workspace</Badge><h1 className="mt-2 text-2xl font-extrabold tracking-tight">{vendor?.shop_name ?? "Sell on Bale Drop"}</h1><p className="mt-1 text-sm text-muted-foreground">Submit listings, dispatch orders and follow payout status.</p></div><Badge variant={vendor?.verification_status === "inspected" ? "verified" : "amber"}>{vendor?.verification_status ?? "Demo preview"}</Badge></div>
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start"><div><Badge variant="inspected"><StoreIcon /> Vendor workspace</Badge><h1 className="mt-2 text-2xl font-extrabold tracking-tight">{vendor?.shop_name ?? "Sell on Bale Drop"}</h1><p className="mt-1 text-sm text-muted-foreground">Submit listings, dispatch orders and follow payout status.</p></div><Badge variant={vendor?.verification_status === "inspected" ? "verified" : "amber"}>{vendor?.verification_status ?? "Pending"}</Badge></div>
       {error && <p role="alert" className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</p>}
       {notice && <p role="status" className="mt-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200">{notice}</p>}
 
@@ -174,10 +170,10 @@ export function VendorDashboard({ demo }: { demo: boolean }) {
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_1.15fr]">
         <Card className="p-5"><div className="flex items-center justify-between gap-2"><div><h2 className="font-bold">Your listings</h2><p className="text-xs text-muted-foreground">New listings enter admin moderation.</p></div><Button size="sm" onClick={() => setShowForm((value) => !value)}><Plus /> New listing</Button></div>
           {showForm && <div className="mt-4 flex flex-col gap-3 border-t pt-4"><Input placeholder="Listing title" value={form.title} onChange={(e) => update("title", e.target.value)} /><div className="grid gap-3 sm:grid-cols-2"><select value={form.category} onChange={(e) => update("category", e.target.value)} className="h-11 rounded-xl border border-input bg-background px-3 text-sm">{CATEGORIES.map((category) => <option key={category}>{category}</option>)}</select><select value={form.grade} onChange={(e) => update("grade", e.target.value as FormState["grade"])} className="h-11 rounded-xl border border-input bg-background px-3 text-sm"><option value="A">Grade A</option><option value="B">Grade B</option><option value="C">Grade C</option></select></div><div className="grid gap-3 sm:grid-cols-3"><select value={form.kind} onChange={(e) => update("kind", e.target.value as FormState["kind"])} className="h-11 rounded-xl border border-input bg-background px-3 text-sm"><option value="bale">Bale</option><option value="single">Single</option></select><Input inputMode="numeric" placeholder="Price in ₦" value={form.price} onChange={(e) => update("price", e.target.value.replace(/\D/g, ""))} /><Input inputMode="numeric" placeholder="Quantity" value={form.qty} onChange={(e) => update("qty", e.target.value.replace(/\D/g, ""))} /></div><div className="grid gap-3 sm:grid-cols-2"><select value={form.city} onChange={(e) => update("city", e.target.value)} className="h-11 rounded-xl border border-input bg-background px-3 text-sm">{CITIES.map((city) => <option key={city}>{city}</option>)}</select><Input placeholder="Approx. pieces (e.g. ~60 pcs)" value={form.pieces} onChange={(e) => update("pieces", e.target.value)} /></div><Textarea placeholder="Describe grade, condition, sizing and what buyers receive" value={form.description} onChange={(e) => update("description", e.target.value)} /><label className="flex cursor-pointer items-center gap-2 rounded-xl border border-dashed p-3 text-sm"><ImagePlus className="h-4 w-4 text-primary" />{image?.name ?? "Add a listing photo"}<input type="file" accept="image/*" className="sr-only" onChange={(e) => setImage(e.target.files?.[0] ?? null)} /></label><Button onClick={createProduct} disabled={saving}>{saving ? <><Loader2 className="animate-spin" /> Saving…</> : "Submit for review"}</Button></div>}
-          <div className="mt-4 flex flex-col divide-y">{loading ? <p className="py-6 text-center text-sm text-muted-foreground"><Loader2 className="mx-auto h-4 w-4 animate-spin" /></p> : visibleProducts.length === 0 ? <div className="py-6 text-center"><p className="text-sm font-semibold">No listings yet</p><p className="mt-1 text-xs text-muted-foreground">Add your first bale or single piece — it goes live after moderation (usually under 24 hours).</p></div> : visibleProducts.map((product) => <div key={product.id} className="flex items-center gap-3 py-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary"><PackageCheck className="h-5 w-5" /></span><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{product.title}</p><p className="text-xs text-muted-foreground">{product.category} • Grade {product.grade} • {naira(product.price_naira)}</p></div><Badge variant={product.status === "active" ? "verified" : product.status === "rejected" ? "live" : "amber"}>{product.status}</Badge></div>)}</div>
+          <div className="mt-4 flex flex-col divide-y">{loading ? <p className="py-6 text-center text-sm text-muted-foreground"><Loader2 className="mx-auto h-4 w-4 animate-spin" /></p> : products.length === 0 ? <div className="py-6 text-center"><p className="text-sm font-semibold">No listings yet</p><p className="mt-1 text-xs text-muted-foreground">Add your first bale or single piece. It goes live after moderation (usually under 24 hours).</p></div> : products.map((product) => <div key={product.id} className="flex items-center gap-3 py-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary"><PackageCheck className="h-5 w-5" /></span><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{product.title}</p><p className="text-xs text-muted-foreground">{product.category} • Grade {product.grade} • {naira(product.price_naira)}</p></div><Badge variant={product.status === "active" ? "verified" : product.status === "rejected" ? "live" : "amber"}>{product.status}</Badge></div>)}</div>
         </Card>
 
-        <Card className="p-5"><div><h2 className="font-bold">Orders to fulfill</h2><p className="text-xs text-muted-foreground">Only paid orders can move through dispatch.</p></div><div className="mt-4 flex flex-col divide-y">{loading ? <p className="py-6 text-center text-sm text-muted-foreground"><Loader2 className="mx-auto h-4 w-4 animate-spin" /></p> : orders.length === 0 ? <p className="py-6 text-sm text-muted-foreground">No live orders yet.</p> : orders.map((order) => <div key={order.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center"><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{order.title}</p><p className="text-xs text-muted-foreground">BD-{order.id.slice(0, 6).toUpperCase()} • {naira(order.total_naira)}</p></div><Badge variant={order.status === "delivered" ? "verified" : order.status === "disputed" ? "live" : "amber"}>{STATUS_LABEL[order.status] ?? order.status}</Badge>{live && <div className="flex flex-wrap gap-2">{order.status === "paid" && <Button size="sm" onClick={() => fulfil(order.id, "processing")}>Start</Button>}{order.status === "processing" && <Button size="sm" onClick={() => fulfil(order.id, "ready")}>Ready</Button>}{order.status === "ready" && <Button size="sm" onClick={() => createTracking(order.id)}><Truck /> Dispatch</Button>}</div>}</div>)}</div></Card>
+        <Card className="p-5"><div><h2 className="font-bold">Orders to fulfill</h2><p className="text-xs text-muted-foreground">Only paid orders can move through dispatch.</p></div><div className="mt-4 flex flex-col divide-y">{loading ? <p className="py-6 text-center text-sm text-muted-foreground"><Loader2 className="mx-auto h-4 w-4 animate-spin" /></p> : orders.length === 0 ? <p className="py-6 text-sm text-muted-foreground">No live orders yet.</p> : orders.map((order) => <div key={order.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center"><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{order.title}</p><p className="text-xs text-muted-foreground">BD-{order.id.slice(0, 6).toUpperCase()} • {naira(order.total_naira)}</p></div><Badge variant={order.status === "delivered" ? "verified" : order.status === "disputed" ? "live" : "amber"}>{STATUS_LABEL[order.status] ?? order.status}</Badge>{live && <div className="flex flex-wrap gap-2">{order.status === "paid" && <Button size="sm" onClick={() => fulfil(order.id, "processing")}>Start</Button>}{order.status === "processing" && <Button size="sm" onClick={() => fulfil(order.id, "ready")}>Ready</Button>}{order.status === "ready" && <><Input className="w-48" aria-label={`Tracking number for order ${order.id}`} placeholder="Courier tracking number" value={trackingNumbers[order.id] ?? ""} onChange={(e) => setTrackingNumbers((current) => ({ ...current, [order.id]: e.target.value }))} /><Button size="sm" disabled={!trackingNumbers[order.id]?.trim()} onClick={() => fulfil(order.id, "in_transit", trackingNumbers[order.id])}><Truck /> Mark dispatched</Button></>}</div>}</div>)}</div></Card>
       </div>
     </div>
   );

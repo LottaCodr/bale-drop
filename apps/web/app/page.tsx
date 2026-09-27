@@ -14,14 +14,19 @@ import {
 } from "@/components/commerce";
 import { RecentlyViewedRail } from "@/components/recently-viewed";
 import { HomeTracker } from "@/components/home-tracker";
+import { ServiceUnavailable } from "@/components/service-unavailable";
 import { getHomeData } from "@/lib/data";
+import { isSupabaseLive } from "@/lib/config";
 import { slotsLeft } from "@bale-drop/database";
 
-/** Homepage — live Supabase data with mock fallback (see lib/data.ts). */
+/** Storefront. If the backend is unavailable, show a safe service state. */
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const { bales, products, vendors } = await getHomeData();
+  if (!isSupabaseLive()) return <ServiceUnavailable title="The shop is temporarily unavailable" description="We cannot load listings right now. Please check back shortly." homeLink={false} />;
+  const data = await getHomeData();
+  if (!data) return <ServiceUnavailable title="The shop is temporarily unavailable" description="We cannot load listings right now. Please check back shortly." homeLink={false} />;
+  const { bales, products, vendors } = data;
   const featured = [...bales].sort((a, b) => slotsLeft(a.bale) - slotsLeft(b.bale))[0];
   const firstProductByVendor = new Map(products.map((p) => [p.vendor.id, p.product.id] as const));
 
@@ -32,15 +37,14 @@ export default async function HomePage() {
       <section className="container grid gap-8 py-8 md:py-12 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
         <div>
           <Badge variant="amber" className="mb-4">
-            <Zap /> Live now in 4 cities
+            <Zap /> Browse listings in 4 cities
           </Badge>
           <h1 className="text-4xl font-extrabold leading-[1.05] tracking-tight md:text-5xl">
             Okirika, <span className="text-primary">without stories.</span>
           </h1>
           <p className="mt-4 max-w-lg text-base leading-relaxed text-muted-foreground md:text-lg">
-            Verified bales and single pieces from inspected vendors. Pay into escrow, track
-            delivery, and only release money when you confirm. Or{" "}
-            <b className="text-foreground">split a full bale</b> with other buyers and pay per slot.
+            Shop verified bales and single pieces with tracked delivery. Split a full bale
+            with other buyers and pay per slot.
           </p>
           <div className="mt-6 flex flex-col gap-3 sm:flex-row">
             <Button size="lg" asChild>
@@ -54,18 +58,6 @@ export default async function HomePage() {
               </Link>
             </Button>
           </div>
-          <dl className="mt-8 grid max-w-md grid-cols-3 gap-4 border-t pt-5">
-            {[
-              ["100%", "escrow protected"],
-              ["4", "launch cities"],
-              ["48hrs", "confirm window"],
-            ].map(([v, l]) => (
-              <div key={l}>
-                <dt className="text-2xl font-extrabold tabular-nums">{v}</dt>
-                <dd className="text-[13px] text-muted-foreground">{l}</dd>
-              </div>
-            ))}
-          </dl>
         </div>
 
         {/* Spotlight: the split closest to filling = urgency above the fold */}
@@ -77,7 +69,7 @@ export default async function HomePage() {
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
                   <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
                 </span>
-                Filling fast — {slotsLeft(featured.bale)} slot{slotsLeft(featured.bale) === 1 ? "" : "s"} left
+                Filling fast: {slotsLeft(featured.bale)} slot{slotsLeft(featured.bale) === 1 ? "" : "s"} left
               </p>
               <Link href="/search?kind=bale" className="text-sm font-semibold text-primary hover:underline">
                 All splits
@@ -121,7 +113,7 @@ export default async function HomePage() {
       <section id="new" className="container scroll-mt-24 py-6">
         <SectionHeader
           title="Shop by category"
-          sub="Filter by city, grade and price — every listing is escrow protected."
+          sub="Filter by city, grade and price."
           href="/search"
           linkLabel="Open search"
         />
@@ -162,8 +154,8 @@ export default async function HomePage() {
       {/* ---------- ESCROW ---------- */}
       <section id="escrow" className="container scroll-mt-24 py-6 pb-12">
         <SectionHeader
-          title="Your money is never at risk"
-          sub="Every naira passes through escrow. No stories, no 'send receipt on WhatsApp'."
+          title="How escrow protects your order"
+          sub="Your payment is held until delivery is confirmed or a dispute is resolved."
         />
         <EscrowSteps />
         <div className="mt-6 flex flex-col items-start gap-3 rounded-2xl bg-primary p-6 text-primary-foreground md:flex-row md:items-center">

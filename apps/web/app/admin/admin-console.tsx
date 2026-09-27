@@ -16,77 +16,35 @@ import { cn } from "@/lib/utils";
 
 type Tab = "vendors" | "products" | "disputes" | "payouts" | "support";
 
-const TABS: { id: Tab; label: string; count: number }[] = [
-  { id: "vendors", label: "Vendor approvals", count: 3 },
-  { id: "products", label: "Product moderation", count: 2 },
-  { id: "disputes", label: "Disputes", count: 2 },
-  { id: "payouts", label: "Payouts", count: 2 },
-  { id: "support", label: "Support", count: 0 },
+const TABS: { id: Tab; label: string }[] = [
+  { id: "vendors", label: "Vendor approvals" },
+  { id: "products", label: "Product moderation" },
+  { id: "disputes", label: "Disputes" },
+  { id: "payouts", label: "Payouts" },
+  { id: "support", label: "Support" },
 ];
 
-const VENDOR_QUEUE = [
-  { id: "VD-1024", shop: "Surulere Thrift plug", city: "Lagos", docs: "NIN + shop + bale", when: "2h ago" },
-  { id: "VD-1023", shop: "Sabon Gari Bales", city: "Kano", docs: "NIN + shop", when: "6h ago" },
-  { id: "VD-1022", shop: "Mile 3 Okirika", city: "Port Harcourt", docs: "Voter's card + shop + bale", when: "1d ago" },
-];
+type VendorQueueItem = { id: string; shop: string; city: string; docs: string; when: string };
+type ProductQueueItem = { id: string; title: string; vendor: string; grade: string; price: number };
+type DisputeQueueItem = { id: string; order: string; issue: string; evidence: number; amount: number };
+type PayoutQueueItem = { id: string; vendor: string; gross: number; commission: number; eta: string; status: string };
 
-const PRODUCT_QUEUE = [
-  { id: "LP-881", title: "Grade A Hoodies Bale — 60kg", vendor: "Kano Bale House", grade: "A", price: 130000 },
-  { id: "LP-880", title: "Mixed Shoes Bale (no grade stated)", vendor: "Mile 3 Okirika", grade: "—", price: 75000 },
-];
-
-const DISPUTES = [
-  { id: "DP-112", order: "BD-2019", issue: "Grade B sold as Grade A", evidence: 4, amount: 45000 },
-  { id: "DP-111", order: "BD-2007", issue: "Partial delivery — 8 of 10 slots", evidence: 2, amount: 22000 },
-];
-
-const SUPPORT_SAMPLE: SupportMessage[] = [
-  {
-    id: "SM-401",
-    name: "Ngozi E.",
-    email: "ngozi@example.com",
-    topic: "delivery",
-    body: "The courier called once while I was at work and now the parcel is back at the pick-up point. Can it be rebooked for Saturday?",
-    order_ref: "BD-2019",
-    status: "open",
-    created_at: new Date(Date.now() - 3 * 3600_000).toISOString(),
-    resolved_at: null,
-  },
-  {
-    id: "SM-400",
-    name: "Ibrahim S.",
-    email: "ibrahim@example.com",
-    topic: "vendor",
-    body: "My payout shows pending since Tuesday. Vendor shop is Sabon Gari Bales — can you check the transfer?",
-    order_ref: null,
-    status: "open",
-    created_at: new Date(Date.now() - 26 * 3600_000).toISOString(),
-    resolved_at: null,
-  },
-];
-
-const PAYOUTS = [
-  { id: "PO-331", vendor: "Adaeze Thrift Co.", gross: 150000, commission: 10500, eta: "Today", status: "pending" },
-  { id: "PO-330", vendor: "Grade-A Plug Abuja", gross: 84000, commission: 5880, eta: "Today", status: "pending" },
-];
-
-export function AdminConsole({ demo }: { demo: boolean }) {
+export function AdminConsole() {
   const [tab, setTab] = useState<Tab>("vendors");
   const [decided, setDecided] = useState<Record<string, string>>({});
-  const [vendorQueue, setVendorQueue] = useState(VENDOR_QUEUE);
-  const [productQueue, setProductQueue] = useState(PRODUCT_QUEUE);
-  const [disputeQueue, setDisputeQueue] = useState(DISPUTES);
-  const [payoutQueue, setPayoutQueue] = useState(PAYOUTS);
-  const [supportQueue, setSupportQueue] = useState<SupportMessage[]>(demo ? SUPPORT_SAMPLE : []);
+  const [vendorQueue, setVendorQueue] = useState<VendorQueueItem[]>([]);
+  const [productQueue, setProductQueue] = useState<ProductQueueItem[]>([]);
+  const [disputeQueue, setDisputeQueue] = useState<DisputeQueueItem[]>([]);
+  const [payoutQueue, setPayoutQueue] = useState<PayoutQueueItem[]>([]);
+  const [supportQueue, setSupportQueue] = useState<SupportMessage[]>([]);
   const [heldEscrow, setHeldEscrow] = useState<number | null>(null);
-  const [loading, setLoading] = useState(!demo);
+  const [loading, setLoading] = useState(true);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [evidenceLinks, setEvidenceLinks] = useState<Record<string, string[]>>({});
   const [refreshToken, setRefreshToken] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (demo) return;
     const sb = supabaseBrowser();
     Promise.all([
       sb.from("vendor_profiles").select("id, shop_name, city, verification_status, created_at").eq("verification_status", "pending").order("created_at", { ascending: false }),
@@ -97,7 +55,7 @@ export function AdminConsole({ demo }: { demo: boolean }) {
     ]).then(([vendors, products, disputes, payouts, escrow]) => {
       const firstError = vendors.error ?? products.error ?? disputes.error ?? payouts.error ?? escrow.error;
       if (firstError) setError(firstError.message);
-      setVendorQueue((vendors.data ?? []).map((v) => ({ id: v.id, shop: v.shop_name, city: v.city ?? "—", docs: "Pending review", when: new Date(v.created_at).toLocaleDateString("en-NG") })));
+      setVendorQueue((vendors.data ?? []).map((v) => ({ id: v.id, shop: v.shop_name, city: v.city ?? "Not provided", docs: "Pending review", when: new Date(v.created_at).toLocaleDateString("en-NG") })));
       setProductQueue((products.data ?? []).map((p) => ({ id: p.id, title: p.title, vendor: p.vendor_id.slice(0, 8), grade: p.grade, price: p.price_naira })));
       setDisputeQueue((disputes.data ?? []).map((d) => ({ id: d.id, order: d.order_id.slice(0, 8), issue: d.reason, evidence: d.evidence_urls?.length ?? 0, amount: 0 })));
       setPayoutQueue((payouts.data ?? []).map((p) => ({ id: p.id, vendor: p.vendor_id.slice(0, 8), gross: p.gross_naira, commission: p.commission_naira, eta: p.status === "failed" ? "Retry" : p.status === "processing" ? "Verify" : "Queued", status: p.status })));
@@ -109,7 +67,7 @@ export function AdminConsole({ demo }: { demo: boolean }) {
     listSupportMessages()
       .then(setSupportQueue)
       .catch(() => setSupportQueue([]));
-  }, [demo, refreshToken]);
+  }, [refreshToken]);
 
   async function viewEvidence(id: string) {
     setError(null); setActionBusy(`evidence-${id}`);
@@ -122,11 +80,6 @@ export function AdminConsole({ demo }: { demo: boolean }) {
   async function decide(id: string, verdict: string) {
     setError(null);
     setActionBusy(id);
-    if (demo) {
-      setActionBusy(null);
-      setDecided((d) => ({ ...d, [id]: verdict }));
-      return;
-    }
     let functionName = "admin-action";
     let body: Record<string, unknown> = { entity_id: id };
     if (tab === "vendors") body.action = verdict === "Approved" ? "approve_vendor" : "reject_vendor";
@@ -144,7 +97,7 @@ export function AdminConsole({ demo }: { demo: boolean }) {
     setError(null);
     setActionBusy(`support-${id}`);
     try {
-      if (!demo) await resolveSupportMessage(id);
+      await resolveSupportMessage(id);
       setSupportQueue((current) =>
         current.map((message) =>
           message.id === id ? { ...message, status: "resolved", resolved_at: new Date().toISOString() } : message
@@ -178,7 +131,7 @@ export function AdminConsole({ demo }: { demo: boolean }) {
           <h1 className="text-2xl font-extrabold tracking-tight">Admin console</h1>
           <p className="mt-1 text-sm text-muted-foreground">Trust operations: approvals, moderation, disputes, money.</p>
         </div>
-        <Badge variant="outline">{demo ? "Demo data" : "Live"}</Badge>
+        <Badge variant="outline">Live</Badge>
       </div>
       {error && <p role="alert" className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</p>}
 
@@ -188,7 +141,7 @@ export function AdminConsole({ demo }: { demo: boolean }) {
           ["Pending vendors", String(vendorQueue.length)],
           ["Listings to review", String(productQueue.length)],
           ["Open disputes", String(disputeQueue.length)],
-          ["Held in escrow", naira(heldEscrow ?? (demo ? 1240000 : 0))],
+          ["Held in escrow", naira(heldEscrow ?? 0)],
         ].map(([k, v]) => (
           <Card key={k} className="p-4">
             <p className="text-[13px] text-muted-foreground">{k}</p>
@@ -268,7 +221,7 @@ export function AdminConsole({ demo }: { demo: boolean }) {
             {loading ? <li className="p-6 text-sm text-muted-foreground">Loading live queue…</li> : disputeQueue.map((d) => (
               <li key={d.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
                 <div className="min-w-0 flex-1">
-                  <p className="font-bold">{d.id} — {d.issue}</p>
+                  <p className="font-bold">{d.id}: {d.issue}</p>
                   <p className="text-[13px] text-muted-foreground">Order {d.order} • {d.evidence} evidence photos • {naira(d.amount)} held</p>
                 </div>
                 {decided[d.id] ? (
@@ -358,9 +311,6 @@ export function AdminConsole({ demo }: { demo: boolean }) {
           </ul>
         )}
       </Card>
-      <p className="mt-3 text-xs text-muted-foreground">
-        Production rule: every action above executes in an Edge Function with audit rows in `transactions`. No direct client writes to money tables.
-      </p>
     </div>
   );
 }

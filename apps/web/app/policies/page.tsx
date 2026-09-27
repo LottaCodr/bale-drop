@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { POLICIES } from "@/lib/policies";
 
 export const metadata: Metadata = {
-  title: "Policies & buyer protection — Bale Drop",
+  title: "Policies & buyer protection | Bale Drop",
   description:
     "Escrow, refunds, delivery fees, privacy and the terms that apply when you buy or sell on Bale Drop.",
 };
@@ -52,7 +52,7 @@ export default function PoliciesPage() {
           <LifeBuoy className="h-4 w-4 text-primary" /> Still stuck?
         </h2>
         <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-          Support answers order, delivery, refund and vendor questions — and it is the right place to
+          Support answers order, delivery, refund and vendor questions. It is the right place to
           raise a data request.
         </p>
         <Link

@@ -2,8 +2,8 @@
 
 import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2, LogIn, MailCheck, ShieldCheck, ShoppingBag, Store } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { Loader2, MailCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,23 +14,19 @@ import { isSupabaseLive } from "@/lib/config";
 import { friendlyAuthError, messageForErrorParam, type AuthErrorKind } from "@/lib/auth/errors";
 import { postAuthPath, safeNext } from "@/lib/auth/redirect";
 import { isValidEmail, normalizeEmail } from "@/lib/auth/validation";
-import { DEMO_ACCOUNTS, DEMO_PASSWORD, demoLoginsEnabled, type DemoAccount } from "@/lib/auth/demo-accounts";
 import { track } from "@/lib/analytics";
 import { hardNavigate } from "@/lib/auth/navigate";
 
 /** Login — real Supabase auth when live, demo pass-through in mock mode. */
 
-const DEMO_ICONS = { buyer: ShoppingBag, vendor: Store, admin: ShieldCheck } as const;
-
 function LoginForm() {
-  const router = useRouter();
   const params = useSearchParams();
   const next = safeNext(params.get("next"));
   const initialError = messageForErrorParam(params.get("error"));
   const notice = params.get("reset") === "success"
-    ? "Password updated — sign in with your new password."
+    ? "Password updated. Sign in with your new password."
     : params.get("confirmed") === "1"
-      ? "Email confirmed — sign in to continue."
+      ? "Email confirmed. Sign in to continue."
       : null;
 
   const [email, setEmail] = useState(params.get("email") ?? "");
@@ -81,12 +77,6 @@ function LoginForm() {
     void signIn({ email: normalized, password }, "form");
   }
 
-  function signInAsDemo(account: DemoAccount) {
-    setEmail(account.email);
-    setPassword(DEMO_PASSWORD);
-    void signIn({ email: account.email, password: DEMO_PASSWORD }, account.email);
-  }
-
   async function resendConfirmation() {
     setBusy("resend");
     const { error: err } = await supabaseBrowser().auth.resend({
@@ -115,18 +105,13 @@ function LoginForm() {
   if (!isSupabaseLive()) {
     return (
       <Card className="p-6 text-center">
-        <p className="font-bold">Demo mode — no login needed</p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Auth lights up automatically once Supabase keys are configured.
-        </p>
-        <Button className="mt-4 w-full" onClick={() => router.push(next)}>
-          Continue exploring
-        </Button>
+        <p className="font-bold">Sign-in is temporarily unavailable</p>
+        <p className="mt-1 text-sm text-muted-foreground">Please try again later.</p>
+        <Button className="mt-4 w-full" asChild><Link href="/">Back to home</Link></Button>
       </Card>
     );
   }
 
-  const isDemoEmail = normalizeEmail(email).endsWith("@baledrop.demo");
   const disabled = busy !== null;
 
   return (
@@ -176,17 +161,12 @@ function LoginForm() {
             <p>{error.message}</p>
             {error.kind === "email_not_confirmed" && (
               resent ? (
-                <p className="mt-1 flex items-center gap-1.5 font-normal"><MailCheck className="h-4 w-4" /> New confirmation link sent — check your inbox and spam folder.</p>
+                <p className="mt-1 flex items-center gap-1.5 font-normal"><MailCheck className="h-4 w-4" /> New confirmation link sent. Check your inbox and spam folder.</p>
               ) : (
                 <button type="button" onClick={resendConfirmation} disabled={disabled} className="mt-1 font-bold underline underline-offset-2">
                   {busy === "resend" ? "Sending…" : "Resend confirmation email"}
                 </button>
               )
-            )}
-            {error.kind === "invalid_credentials" && isDemoEmail && (
-              <p className="mt-1 text-xs font-normal">
-                Demo accounts are created by <code>supabase/fix-demo-logins.sql</code> — if this project was seeded before that fix, run it once in the Supabase SQL editor.
-              </p>
             )}
           </FormAlert>
         )}
@@ -206,38 +186,6 @@ function LoginForm() {
         New here? <Link href={`/signup${next !== "/" ? `?next=${encodeURIComponent(next)}` : ""}`} className="font-semibold text-primary hover:underline">Create an account</Link>
       </p>
 
-      {demoLoginsEnabled() && (
-        <section aria-labelledby="demo-heading" className="mt-5 rounded-xl border border-dashed p-3">
-          <h2 id="demo-heading" className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Try a demo account</h2>
-          <ul className="mt-2 grid gap-2">
-            {DEMO_ACCOUNTS.map((account) => {
-              const Icon = DEMO_ICONS[account.role];
-              return (
-                <li key={account.email}>
-                  <button
-                    type="button"
-                    onClick={() => signInAsDemo(account)}
-                    disabled={disabled}
-                    className="flex w-full items-center gap-3 rounded-lg border bg-background p-2.5 text-left transition hover:border-primary/60 hover:bg-muted/50 disabled:opacity-60"
-                  >
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                      <Icon className="h-4 w-4" aria-hidden="true" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-bold">{account.label}</span>
-                      <span className="block truncate text-xs text-muted-foreground">{account.description}</span>
-                    </span>
-                    {busy === account.email ? <Loader2 className="h-4 w-4 animate-spin text-primary" aria-label="Signing in" /> : <LogIn className="h-4 w-4 text-muted-foreground" aria-hidden="true" />}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-          <p className="mt-2 text-center text-[11px] text-muted-foreground">
-            Or type any seeded email (e.g. buyer2@baledrop.demo) with password <code className="font-semibold">{DEMO_PASSWORD}</code>
-          </p>
-        </section>
-      )}
     </Card>
   );
 }

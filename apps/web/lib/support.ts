@@ -47,12 +47,7 @@ const SELECT_COLUMNS = "id, name, email, topic, body, order_ref, status, created
  * shows up under the buyer's own account.
  */
 export async function sendSupportMessage(input: SupportMessageInput): Promise<void> {
-  if (!isSupabaseLive()) {
-    // Demo mode: no database to write to, but the form should still feel real
-    // and the copy below tells the buyer exactly what to expect.
-    await new Promise((resolve) => setTimeout(resolve, 400));
-    return;
-  }
+  if (!isSupabaseLive()) throw new Error("Support is temporarily unavailable. Please try again later.");
 
   const sb = supabaseBrowser();
   const { data } = await sb.auth.getUser();

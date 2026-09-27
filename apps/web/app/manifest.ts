@@ -7,7 +7,7 @@ import type { MetadataRoute } from "next";
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Bale Drop — Trusted Okirika, Split Bales",
+    name: "Bale Drop | Trusted Okirika, Split Bales",
     short_name: "Bale Drop",
     description:
       "Buy verified Okirika bales and single pieces with escrow protection. Split full bales with other buyers and pay per slot.",

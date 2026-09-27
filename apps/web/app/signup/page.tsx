@@ -2,7 +2,7 @@
 
 import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Loader2, MailCheck, ShoppingBag, Store } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -33,7 +33,6 @@ type Role = "buyer" | "vendor";
 type FieldKey = "name" | "email" | "password";
 
 function SignupForm() {
-  const router = useRouter();
   const params = useSearchParams();
   const requestedNext = safeNext(params.get("next"));
   const [role, setRole] = useState<Role>(params.get("role") === "vendor" ? "vendor" : "buyer");
@@ -122,7 +121,7 @@ function SignupForm() {
       setResendNotice(friendlyAuthError(err).message);
       return;
     }
-    setResendNotice("Sent again — it can take a minute to arrive.");
+    setResendNotice("Sent again. It can take a minute to arrive.");
     startCooldown(60);
   }
 
@@ -142,13 +141,9 @@ function SignupForm() {
   if (!isSupabaseLive()) {
     return (
       <Card className="p-6 text-center">
-        <p className="font-bold">Demo mode — no signup needed</p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Auth lights up automatically once Supabase keys are configured.
-        </p>
-        <Button className="mt-4 w-full" onClick={() => router.push(role === "vendor" ? "/sell" : requestedNext)}>
-          Continue exploring
-        </Button>
+        <p className="font-bold">Account creation is temporarily unavailable</p>
+        <p className="mt-1 text-sm text-muted-foreground">Please try again later.</p>
+        <Button className="mt-4 w-full" asChild><Link href="/">Back to home</Link></Button>
       </Card>
     );
   }

@@ -75,7 +75,7 @@ export function AccountClient({ live, initial }: { live: boolean; initial: Accou
     setPrefsCity(fields.city);
 
     if (!live) {
-      setNotice("Saved in this browser. Connect Supabase to sync your profile.");
+      setNotice("Account changes cannot be saved right now. Please try again later.");
       return;
     }
 
@@ -86,7 +86,7 @@ export function AccountClient({ live, initial }: { live: boolean; initial: Accou
     } = await sb.auth.getUser();
     if (!user) {
       setSaving(false);
-      setError("Your session expired — sign in again to save.");
+      setError("Your session expired. Sign in again to save.");
       return;
     }
     const { error: updateError } = await sb

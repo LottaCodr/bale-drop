@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { safeNext } from "@/lib/auth/redirect";
+import { isSupabaseLive } from "@/lib/config";
 
 /**
  * Session refresh + route guards.
@@ -21,7 +22,7 @@ function matches(pathname: string, routes: string[]): boolean {
 export async function middleware(request: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !anonKey || url.includes("placeholder")) {
+  if (!isSupabaseLive() || !url || !anonKey) {
     return NextResponse.next();
   }
 

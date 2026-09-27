@@ -1,14 +1,10 @@
 /**
- * Server data-access layer (imports next/headers — server components only).
- *
- * Strategy: live Supabase when configured, mock dataset otherwise; live
- * failures also fall back to mock so a DB blip never whitescreens the store.
+ * Server data-access layer. Reads never substitute sample data for live data.
  * All fetches are React-cached per request (metadata + page share one fetch).
  */
 import { cache } from "react";
 import { cookies } from "next/headers";
 import {
-  filterProducts,
   getBaleByProductId,
   getProductById,
   getVendorById,
@@ -26,7 +22,6 @@ import {
   normalizeFilters,
   reviewAuthorLabel,
   searchProducts,
-  searchViewOfProduct,
   slotsLeft,
   supabaseServer,
   type BaleListing,
@@ -35,20 +30,6 @@ import {
   type Vendor,
 } from "@bale-drop/database";
 import { isSupabaseLive } from "./config";
-import {
-  BALES,
-  PRODUCTS,
-  VENDORS,
-  getBale as mockGetBale,
-  getProduct as mockGetProduct,
-  getProductOrNull,
-  getProductsByVendor,
-  getReviewsForProduct,
-  getReviewsForVendor,
-  getVendor as mockGetVendor,
-  getVendorOrNull,
-  type MockReview,
-} from "./mock";
 
 export interface BaleLive {
   bale: BaleListing;
@@ -68,37 +49,9 @@ async function authed() {
   return supabaseServer({ getAll: () => store.getAll(), set: () => undefined });
 }
 
-function mockHome(): { bales: BaleLive[]; products: ProductLive[]; vendors: Vendor[] } {
-  const productById = new Map(PRODUCTS.map((p) => [p.id, p]));
-  const vendorById = new Map(VENDORS.map((v) => [v.id, v]));
-  return {
-    bales: BALES.map((b) => {
-      const product = productById.get(b.productId)!;
-      return { bale: b, product, vendor: vendorById.get(product.vendorId)! };
-    }),
-    products: PRODUCTS.map((p) => ({ product: p, vendor: vendorById.get(p.vendorId)! })),
-    vendors: VENDORS,
-  };
-}
-
-function mockListing(id: string): ListingData | null {
-  const product = PRODUCTS.find((p) => p.id === id);
-  if (!product) return null;
-  const vendor = mockGetVendor(product.vendorId);
-  const b = BALES.find((x) => x.productId === id) ?? null;
-  return {
-    product,
-    vendor,
-    bale: b ? { bale: b, product, vendor } : null,
-    related: PRODUCTS.filter((p) => p.id !== id)
-      .slice(0, 4)
-      .map((p) => ({ product: p, vendor: mockGetVendor(p.vendorId) })),
-  };
-}
-
 export const getHomeData = cache(
-  async (): Promise<{ bales: BaleLive[]; products: ProductLive[]; vendors: Vendor[] }> => {
-    if (!isSupabaseLive()) return mockHome();
+  async (): Promise<{ bales: BaleLive[]; products: ProductLive[]; vendors: Vendor[] } | null> => {
+    if (!isSupabaseLive()) return { bales: [], products: [], vendors: [] };
     try {
       const sb = await authed();
       const [baleRows, homeProductRows] = await Promise.all([
@@ -146,8 +99,8 @@ export const getHomeData = cache(
       }
       return { bales, products, vendors: [...vendorById.values()] };
     } catch (err) {
-      console.warn("[data] live fetch failed — mock fallback", err);
-      return mockHome();
+      console.error("[data] home unavailable", err);
+      return null;
     }
   }
 );
@@ -160,7 +113,7 @@ export interface ListingData {
 }
 
 export const getListingData = cache(async (id: string): Promise<ListingData | null> => {
-  if (!isSupabaseLive()) return mockListing(id);
+  if (!isSupabaseLive()) return null;
   try {
     const sb = await authed();
     const prow = await getProductById(sb, id);
@@ -198,13 +151,10 @@ export const getListingData = cache(async (id: string): Promise<ListingData | nu
     }
     return { product, vendor, bale, related };
   } catch (err) {
-    console.warn("[data] live fetch failed — mock fallback", err);
-    return mockListing(id);
+    console.error("[data] listing unavailable", err);
+    return null;
   }
 });
-
-// Re-export mock getters for cart/orders (live user orders land with auth).
-export { mockGetBale, mockGetProduct, mockGetVendor };
 
 /* ============================================================================
  * Discovery + engagement reads (search, storefront, reviews, cart reconcile)
@@ -221,38 +171,12 @@ export interface SearchResults {
   splits: BaleLive[];
 }
 
-function mockSearchView(): (ReturnType<typeof searchViewOfProduct> & { product: Product })[] {
-  return PRODUCTS.map((product, index) => ({
-    ...searchViewOfProduct(product, PRODUCTS.length - index),
-    product,
-  }));
-}
-
 /**
- * Catalog search — live Postgres query or the in-memory demo equivalent.
- * Both paths run through the same `ProductFilters` contract (see
- * packages/database/src/search.ts) so demo mode never hides a filter bug.
+ * Catalog search against the live store only.
  */
-export const searchCatalog = cache(async (filters: ProductFilters): Promise<SearchResults> => {
+export const searchCatalog = cache(async (filters: ProductFilters): Promise<SearchResults | null> => {
   const normalized = normalizeFilters(filters);
-  if (!isSupabaseLive()) {
-    const views = mockSearchView();
-    const matches = filterProducts(views, { ...normalized, limit: undefined });
-    const vendorById = new Map(VENDORS.map((vendor) => [vendor.id, vendor]));
-    const limited = normalized.limit ? matches.slice(0, normalized.limit) : matches;
-    const results: ProductLive[] = [];
-    for (const view of limited) {
-      const vendor = vendorById.get(view.product.vendorId);
-      if (vendor) results.push({ product: view.product, vendor });
-    }
-    return {
-      results,
-      total: matches.length,
-      categoryCounts: countCategories(matches),
-      vendors: [...vendorById.values()],
-      splits: mockSplitsFor(results),
-    };
-  }
+  if (!isSupabaseLive()) return emptySearchResults();
 
   try {
     const sb = await authed();
@@ -288,36 +212,13 @@ export const searchCatalog = cache(async (filters: ProductFilters): Promise<Sear
       splits,
     };
   } catch (err) {
-    console.warn("[data] live search failed — mock fallback", err);
-    return searchCatalogMock(normalized);
+    console.error("[data] search unavailable", err);
+    return null;
   }
 });
 
-function searchCatalogMock(normalized: ProductFilters): SearchResults {
-  const matches = filterProducts(mockSearchView(), { ...normalized, limit: undefined });
-  const vendorById = new Map(VENDORS.map((vendor) => [vendor.id, vendor]));
-  const results: ProductLive[] = [];
-  for (const view of normalized.limit ? matches.slice(0, normalized.limit) : matches) {
-    const vendor = vendorById.get(view.product.vendorId);
-    if (vendor) results.push({ product: view.product, vendor });
-  }
-  return {
-    results,
-    total: matches.length,
-    categoryCounts: countCategories(matches),
-    vendors: [...vendorById.values()],
-    splits: mockSplitsFor(results),
-  };
-}
-
-function mockSplitsFor(results: ProductLive[]): BaleLive[] {
-  const onScreen = new Map(results.map((entry) => [entry.product.id, entry] as const));
-  const splits: BaleLive[] = [];
-  for (const bale of BALES) {
-    const entry = onScreen.get(bale.productId);
-    if (entry) splits.push({ bale, product: entry.product, vendor: entry.vendor });
-  }
-  return splits;
+function emptySearchResults(): SearchResults {
+  return { results: [], total: 0, categoryCounts: {}, vendors: [], splits: [] };
 }
 
 function countCategories(products: { category: string }[]): Record<string, number> {
@@ -346,7 +247,7 @@ export interface ReviewViewSummary {
 
 /** Product reviews for the listing page (public read; buyers are anonymized). */
 export const getProductReviews = cache(async (productId: string): Promise<ReviewViewSummary> => {
-  if (!isSupabaseLive()) return mockReviewSummary(getReviewsForProduct(productId));
+  if (!isSupabaseLive()) return emptyReviewSummary();
   try {
     const sb = await authed();
     const summary = await listProductReviews(sb, productId);
@@ -369,33 +270,13 @@ export const getProductReviews = cache(async (productId: string): Promise<Review
       distribution: summary.distribution,
     };
   } catch (err) {
-    console.warn("[data] live reviews failed — mock fallback", err);
-    return mockReviewSummary(getReviewsForProduct(productId));
+    console.error("[data] reviews unavailable", err);
+    return emptyReviewSummary();
   }
 });
 
-function mockReviewSummary(reviews: MockReview[]): ReviewViewSummary {
-  const distribution: ReviewViewSummary["distribution"] = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-  let total = 0;
-  for (const review of reviews) {
-    distribution[review.rating] += 1;
-    total += review.rating;
-  }
-  return {
-    reviews: reviews.map((review) => ({
-      id: review.id,
-      productId: review.productId,
-      rating: review.rating,
-      body: review.body,
-      createdAt: new Date(review.date).toISOString(),
-      author: review.author,
-      initials: review.initials,
-      hue: review.hue,
-    })),
-    count: reviews.length,
-    average: reviews.length ? Math.round((total / reviews.length) * 10) / 10 : 0,
-    distribution,
-  };
+function emptyReviewSummary(): ReviewViewSummary {
+  return { reviews: [], average: 0, count: 0, distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } };
 }
 
 export interface VendorStorefront {
@@ -407,17 +288,7 @@ export interface VendorStorefront {
 
 /** Public shop page: `/vendor/[id]`. */
 export const getVendorStorefront = cache(async (vendorId: string): Promise<VendorStorefront | null> => {
-  if (!isSupabaseLive()) {
-    const vendor = getVendorOrNull(vendorId);
-    if (!vendor) return null;
-    const products = getProductsByVendor(vendorId);
-    const splits: BaleLive[] = [];
-    for (const bale of BALES) {
-      const product = getProductOrNull(bale.productId);
-      if (product && product.vendorId === vendorId) splits.push({ bale, product, vendor });
-    }
-    return { vendor, products: products.map((product) => ({ product, vendor })), splits, reviews: mockReviewSummary(getReviewsForVendor(vendorId)) };
-  }
+  if (!isSupabaseLive()) return null;
 
   try {
     const sb = await authed();
@@ -463,25 +334,13 @@ export const getVendorStorefront = cache(async (vendorId: string): Promise<Vendo
       },
     };
   } catch (err) {
-    console.warn("[data] live vendor fetch failed — mock fallback", err);
-    return getVendorStorefrontFallback(vendorId);
+    console.error("[data] vendor unavailable", err);
+    return null;
   }
 });
 
-function getVendorStorefrontFallback(vendorId: string): VendorStorefront | null {
-  const vendor = getVendorOrNull(vendorId);
-  if (!vendor) return null;
-  const products = getProductsByVendor(vendorId);
-  return {
-    vendor,
-    products: products.map((product) => ({ product, vendor })),
-    splits: [],
-    reviews: mockReviewSummary(getReviewsForVendor(vendorId)),
-  };
-}
-
 /**
- * Re-price a set of product ids against the live catalog (or the demo set).
+ * Re-price a set of product ids against the live catalog.
  * Used by the cart and checkout to prove the price the buyer saw is still the
  * price we will charge — the actual charge is always computed by
  * `paystack-initialize` on the server.
@@ -489,15 +348,8 @@ function getVendorStorefrontFallback(vendorId: string): VendorStorefront | null 
 export async function getProductsByIds(ids: string[]): Promise<Map<string, ProductLive>> {
   const out = new Map<string, ProductLive>();
   if (ids.length === 0) return out;
-  if (!isSupabaseLive()) {
-    const vendorById = new Map(VENDORS.map((vendor) => [vendor.id, vendor]));
-    for (const id of ids) {
-      const product = getProductOrNull(id);
-      const vendor = product ? vendorById.get(product.vendorId) : undefined;
-      if (product && vendor) out.set(id, { product, vendor });
-    }
-    return out;
-  }
+  if (!isSupabaseLive()) return out;
+
   try {
     const sb = await authed();
     const [rows, baleRows] = await Promise.all([listProductsByIds(sb, ids), listOpenBales(sb)]);

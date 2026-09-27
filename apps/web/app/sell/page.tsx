@@ -27,6 +27,7 @@ import { track } from "@/lib/analytics";
 import { CITIES } from "@/lib/taxonomy";
 import { formatNigerianPhone } from "@/lib/auth/validation";
 import { cn } from "@/lib/utils";
+import { ServiceUnavailable } from "@/components/service-unavailable";
 
 /**
  * Vendor onboarding — 3-step wizard.
@@ -117,7 +118,7 @@ export default function SellPage() {
     setError(null);
     if (!file) return;
     if (file.size > MAX_FILE_MB * 1024 * 1024) {
-      setError(`"${file.name}" is over ${MAX_FILE_MB}MB — compress and retry.`);
+      setError(`"${file.name}" is over ${MAX_FILE_MB}MB. Compress it and try again.`);
       return;
     }
     setFiles((f) => ({ ...f, [key]: file }));
@@ -154,7 +155,7 @@ export default function SellPage() {
     }
     track("vendor_apply_submit", { city: fields.city, plan });
     if (!isSupabaseLive()) {
-      setReference("VD-1024"); // demo
+      setError("Seller applications are temporarily unavailable.");
       return;
     }
     setError(null);
@@ -216,7 +217,7 @@ export default function SellPage() {
       setReference(`VD-${vendor.id.slice(0, 4).toUpperCase()}`);
       router.refresh(); // role is now vendor — refresh server components
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Submission failed — try again.");
+      setError(e instanceof Error ? e.message : "Submission failed. Try again.");
     } finally {
       setSubmitting(false);
     }
@@ -258,7 +259,7 @@ export default function SellPage() {
           </span>
           <h1 className="mt-3 text-xl font-extrabold">Sell on Bale Drop</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Create a free seller account first — your application, documents and payouts are tied to it. Takes about 5 minutes in total.
+            Create a free seller account first. Your application, documents and payouts are tied to it. Takes about 5 minutes in total.
           </p>
           <div className="mt-5 flex flex-col gap-2">
             <Button asChild size="lg"><Link href="/signup?role=vendor&next=/sell">Create seller account</Link></Button>
@@ -269,13 +270,14 @@ export default function SellPage() {
     );
   }
 
+  if (!isSupabaseLive()) return <ServiceUnavailable title="Seller applications are temporarily unavailable" />;
+
   return (
     <div className="container max-w-5xl py-6">
       <Badge variant="amber" className="mb-3"><Store /> Vendor onboarding</Badge>
       <h1 className="text-2xl font-extrabold tracking-tight md:text-3xl">Sell on Bale Drop</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        Verified vendors sell 3x faster. Complete all 3 steps — takes about 5 minutes.
-        {isSupabaseLive() ? "" : " Demo mode: submission is simulated."}
+        Verified vendors sell 3x faster. Complete all 3 steps in about 5 minutes.
       </p>
 
       {/* Stepper */}
@@ -433,7 +435,7 @@ export default function SellPage() {
           <Card className="border-primary/30 bg-primary/5 p-4">
             <p className="flex items-start gap-2 text-sm">
               <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-              <span><b>48-hour escrow</b> protects you too — buyers can&apos;t claim &ldquo;no delivery&rdquo; after confirming.</span>
+              <span><b>48-hour escrow</b> protects you too. Buyers can&apos;t claim &ldquo;no delivery&rdquo; after confirming.</span>
             </p>
           </Card>
         </aside>

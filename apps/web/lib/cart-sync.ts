@@ -59,14 +59,7 @@ export async function reconcileCart(lines: CartLine[]): Promise<CartReconcileRes
     if (error) return EMPTY; // offline / RLS — never block the cart on telemetry
     catalog = new Map((data ?? []).map((row) => [row.id, row as CatalogRow]));
   } else {
-    // Demo mode still demonstrates the flow, using the bundled dataset.
-    const mock = await import("./mock");
-    catalog = new Map(
-      mock.PRODUCTS.map((product) => [
-        product.id,
-        { id: product.id, title: product.title, price_naira: product.price, status: "active", qty: 10 },
-      ])
-    );
+    return EMPTY;
   }
 
   const unavailable: CartLine[] = [];
