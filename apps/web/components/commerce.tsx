@@ -251,11 +251,11 @@ export function BaleSplitCard({
       <div className="flex flex-1 flex-col gap-3 p-4">
         <div>
           <p className="line-clamp-2 font-bold leading-snug group-hover:text-primary">{product.title}</p>
-          <p className="mt-1 flex items-center gap-1.5 text-[13px] text-muted-foreground">
+          <div className="mt-1 flex items-center gap-1.5 text-[13px] text-muted-foreground">
             <Avatar initials={vendor.initials} hue={vendor.hue} size="xs" />
             <span className="font-medium text-foreground">{vendor.shopName}</span>
             <VerifiedMark vendor={vendor} />
-          </p>
+          </div>
         </div>
 
         <div>

@@ -123,14 +123,14 @@ export default async function ListingPage({ params }: { params: Promise<{ id: st
             </span>
           </div>
           <h1 className="mt-2 text-2xl font-extrabold leading-tight tracking-tight md:text-3xl">{product.title}</h1>
-          <p className="mt-2 flex flex-wrap items-center gap-1.5 text-sm">
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-sm">
             <Avatar initials={vendor.initials} hue={vendor.hue} size="xs" />
             <Link href={`/vendor/${vendor.id}`} className="font-semibold hover:text-primary hover:underline">
               {vendor.shopName}
             </Link>
             <VerifiedMark vendor={vendor} />
             <span className="text-muted-foreground">• responds {vendor.responseTime}</span>
-          </p>
+          </div>
 
           <Separator className="my-4" />
 
