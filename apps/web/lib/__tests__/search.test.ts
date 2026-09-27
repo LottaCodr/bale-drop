@@ -31,8 +31,8 @@ const view = (over: Partial<SearchView> & { id: string }): SearchView => ({
 });
 
 const catalog: SearchView[] = [
-  view({ id: "p1", title: "Grade A Unisex Vintage Denim Jackets — Full Bale", category: "Bales", price: 150000, city: "Lagos", sold: 132, rating: 4.8, createdAt: 9 }),
-  view({ id: "p2", title: "Grade A Sneakers Bale — Mixed Sizes 40–45", category: "Shoes", price: 220000, city: "Kano", sold: 210, rating: 4.9, createdAt: 8 }),
+  view({ id: "p1", title: "Grade A Unisex Vintage Denim Jackets (Full Bale)", category: "Bales", price: 150000, city: "Lagos", sold: 132, rating: 4.8, createdAt: 9 }),
+  view({ id: "p2", title: "Grade A Sneakers Bale, Mixed Sizes 40–45", category: "Shoes", price: 220000, city: "Kano", sold: 210, rating: 4.9, createdAt: 8 }),
   view({ id: "p3", title: "Men Corporate Shirts Bale", category: "Men", price: 95000, city: "Abuja", grade: "A", isBale: true, sold: 98, createdAt: 7 }),
   view({ id: "p4", title: "Leather Handbags (5 pcs bundle)", category: "Bags", price: 28000, city: "Abuja", grade: "A", isBale: false, sold: 187, rating: 4.9, createdAt: 6 }),
   view({ id: "p5", title: "Grade B Mixed Ladies Gowns Bale", category: "Women", price: 90000, city: "Port Harcourt", grade: "B", sold: 76, createdAt: 5 }),

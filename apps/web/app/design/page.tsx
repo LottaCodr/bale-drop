@@ -16,7 +16,7 @@ export default function DesignPage() {
     <div className="container max-w-5xl py-6">
       <h1 className="text-2xl font-extrabold tracking-tight">Design system</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        shadcn primitives + Bale Drop tokens. Semantic colors only — no hardcoded hex in components.
+        shadcn primitives + Bale Drop tokens. Use semantic colors, not hardcoded hex in components.
       </p>
 
       {/* Tokens */}
@@ -45,8 +45,8 @@ export default function DesignPage() {
         <Card className="p-5">
           <p className="text-4xl font-extrabold tracking-tight">Okirika, without stories.</p>
           <p className="mt-2 text-xl font-bold">Live bale splits</p>
-          <p className="mt-2 text-base">Body — verified bales from inspected vendors.</p>
-          <p className="mt-2 text-sm text-muted-foreground">Small muted — delivery estimates, helper text.</p>
+          <p className="mt-2 text-base">Body: verified bales from inspected vendors.</p>
+          <p className="mt-2 text-sm text-muted-foreground">Small muted: delivery estimates, helper text.</p>
           <p className="mt-2 text-2xl font-extrabold tabular-nums">₦15,000 <span className="text-sm font-medium text-muted-foreground">tabular-nums</span></p>
         </Card>
       </div>
@@ -95,7 +95,7 @@ export default function DesignPage() {
               <CardDescription>Card description goes here.</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
-              <Input placeholder="Search bales…" aria-label="Demo input" />
+              <Input placeholder="Search bales…" aria-label="Search field" />
               <Progress value={70} />
               <Progress value={90} indicatorClassName="bg-red-500" />
               <Separator />
@@ -139,10 +139,10 @@ export default function DesignPage() {
         <Card className="border-red-300 p-5">
           <h2 className="flex items-center gap-2 font-bold text-red-700"><X className="h-5 w-5" /> Don&apos;t</h2>
           <ul className="mt-3 space-y-2 text-sm">
-            <li>No raw &lt;button&gt; or &lt;input&gt; — use shadcn primitives.</li>
-            <li>No hardcoded hex colors — use semantic tokens.</li>
+            <li>No raw &lt;button&gt; or &lt;input&gt;. Use shadcn primitives.</li>
+            <li>No hardcoded hex colors. Use semantic tokens.</li>
             <li>No fake urgency (invented stock, fake timers).</li>
-            <li>No money logic in components — Edge Functions only.</li>
+            <li>No money logic in components. Use Edge Functions only.</li>
           </ul>
         </Card>
       </div>

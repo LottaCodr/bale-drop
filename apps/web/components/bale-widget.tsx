@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { BadgeCheck, Check, Clock, Share2, ShieldCheck, Users } from "lucide-react";
-import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -41,19 +40,18 @@ function perSlotOf(bale: BaleListing): number {
 
 /** Honest reservation copy: mm:ss when we know the window, generic otherwise. */
 function reservationLabel(expiresAt: number | null, now: number): string {
-  if (!expiresAt) return "Slot reserved — complete payment to lock it";
+  if (!expiresAt) return "Slot reserved. Complete payment to lock it";
   const remaining = Math.max(0, expiresAt - now);
-  if (remaining === 0) return "Reservation window closed — re-claim if the slot is still open";
+  if (remaining === 0) return "Reservation window closed. Claim again if the slot is still open";
   const minutes = Math.floor(remaining / 60000);
   const seconds = Math.floor((remaining % 60000) / 1000);
-  return `Slot reserved for ${pad(minutes)}:${pad(seconds)} — complete payment to lock it`;
+  return `Slot reserved for ${pad(minutes)}:${pad(seconds)}. Complete payment to lock it`;
 }
 
 /**
  * Bale Split booking widget — the conversion core.
  * Server renders `initialBale`; Realtime keeps counters/slots live.
- * Claim path: transactional `claim_bale_slot()` RPC when signed in,
- * demo simulation otherwise (auth UI lands next).
+ * Claim path: transactional `claim_bale_slot()` RPC when signed in.
  */
 export function BaleWidget({
   initialBale,
@@ -108,40 +106,42 @@ export function BaleWidget({
 
   async function handleClaim() {
     setClaimError(null);
-    if (isSupabaseLive()) {
-      setClaiming(true);
-      try {
-        const sb = supabaseBrowser();
-        const { data: sessionData } = await sb.auth.getSession();
-        if (!sessionData.session) {
-          setClaiming(false);
-          window.location.assign(`/login?next=${encodeURIComponent(window.location.pathname + window.location.hash)}`);
-          return;
-        }
-        const { booking, error } = await claimSlot(sb, bale.id);
-        if (error || !booking) {
-          // RPC enforces one-slot-per-buyer / full / expired — surface it honestly.
-          setClaimError(error ?? "Could not reserve this slot");
-          setClaiming(false);
-          return;
-        }
-        setBookingId(booking.booking_id);
-        setClaimExpiresAt(Date.now() + RESERVATION_MS);
-        rememberClaim(bale.id, booking.booking_id);
-        track("claim_slot", { item_id: product.id, bale_id: bale.id, value: perSlotOf(bale), slots_left: left });
-      } catch (e) {
-        setClaimError(e instanceof Error ? e.message : "Claim failed");
+    if (!isSupabaseLive()) {
+      setClaimError("Slot booking is temporarily unavailable.");
+      return;
+    }
+    setClaiming(true);
+    try {
+      const sb = supabaseBrowser();
+      const { data: sessionData } = await sb.auth.getSession();
+      if (!sessionData.session) {
+        setClaiming(false);
+        window.location.assign(`/login?next=${encodeURIComponent(window.location.pathname + window.location.hash)}`);
+        return;
+      }
+      const { booking, error } = await claimSlot(sb, bale.id);
+      if (error || !booking) {
+        // RPC enforces one-slot-per-buyer / full / expired — surface it honestly.
+        setClaimError(error ?? "Could not reserve this slot");
         setClaiming(false);
         return;
       }
+      setBookingId(booking.booking_id);
+      setClaimExpiresAt(Date.now() + RESERVATION_MS);
+      rememberClaim(bale.id, booking.booking_id);
+      track("claim_slot", { item_id: product.id, bale_id: bale.id, value: perSlotOf(bale), slots_left: left });
+    } catch (e) {
+      setClaimError(e instanceof Error ? e.message : "Claim failed");
       setClaiming(false);
+      return;
     }
+    setClaiming(false);
     setClaimed(true);
   }
 
   async function payForSlot() {
     if (!isSupabaseLive()) {
-      setPaid(true);
+      setClaimError("Payment is temporarily unavailable.");
       return;
     }
     if (!bookingId) {
@@ -265,7 +265,7 @@ export function BaleWidget({
               );
             })}
           </div>
-          <p className="mt-2 text-xs text-muted-foreground">MVP rule: 1 slot per buyer per bale. No double booking.</p>
+          <p className="mt-2 text-xs text-muted-foreground">One slot per buyer per bale.</p>
         </div>
 
         {/* Booking states */}
@@ -276,7 +276,7 @@ export function BaleWidget({
         )}
         {!claimed && (
           <Button size="lg" variant="accent" className="w-full text-base" onClick={handleClaim} disabled={claiming || left === 0}>
-            {claiming ? "Reserving…" : left === 0 ? "Split full" : `Claim slot — ${naira(perSlot)}`}
+            {claiming ? "Reserving…" : left === 0 ? "Split full" : `Claim slot: ${naira(perSlot)}`}
           </Button>
         )}
         {claimed && !paid && (
@@ -296,7 +296,7 @@ export function BaleWidget({
               <BadgeCheck className="h-5 w-5" /> You&apos;re in! Slot locked.
             </p>
             <p className="text-sm text-muted-foreground">
-              Order BD-2099 • We&apos;ll notify you the moment this split fills.
+              We&apos;ll notify you when this split fills.
             </p>
           </div>
         )}
@@ -306,16 +306,9 @@ export function BaleWidget({
           <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
           <p>
             <b>Auto-refund guarantee.</b> If this split doesn&apos;t fill before the timer ends,{" "}
-            <b>{vendor.shopName}</b> never touches your money — full refund, no stories.
+            <b>{vendor.shopName}</b> never touches your money. You get a full refund.
           </p>
         </div>
-
-        {!isSupabaseLive() && (
-          <p className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Avatar initials="DE" hue={220} size="xs" />
-            Demo data — connect Supabase (docs/SUPABASE-SETUP.md) for live counters.
-          </p>
-        )}
       </div>
     </Card>
   );

@@ -21,8 +21,8 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug } = await params;
   const policy = policyBySlug(slug);
-  if (!policy) return { title: "Policy not found — Bale Drop" };
-  return { title: `${policy.title} — Bale Drop`, description: policy.summary };
+  if (!policy) return { title: "Policy not found | Bale Drop" };
+  return { title: `${policy.title} | Bale Drop`, description: policy.summary };
 }
 
 export default async function PolicyPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -67,7 +67,7 @@ export default async function PolicyPage({ params }: { params: Promise<{ slug: s
         <Link href="/support" className="font-semibold text-primary hover:underline">
           Ask support
         </Link>{" "}
-        — we answer every message.
+        and we answer every message.
       </p>
     </article>
   );

@@ -57,7 +57,7 @@ export function AddToCartButton({
     <Button variant={justAdded ? "default" : variant} size={size} onClick={handleAdd} className={className}>
       {justAdded ? <Check /> : <ShoppingBag />}
       {justAdded ? "Added" : inCart ? "Add another" : "Add to cart"}
-      {!justAdded && inCart && <span className="sr-only"> — item is already in your cart</span>}
+      {!justAdded && inCart && <span className="sr-only">. Item is already in your cart</span>}
     </Button>
   );
 }

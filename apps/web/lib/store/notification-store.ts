@@ -18,25 +18,6 @@ export interface Notice {
   created_at: string;
 }
 
-export const DEMO_NOTICES: Notice[] = [
-  {
-    id: "demo-1",
-    title: "Escrow protects your next order",
-    body: "Your vendor is paid only after delivery confirmation.",
-    href: "/#escrow",
-    read_at: null,
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "demo-2",
-    title: "Launch delivery subsidy active",
-    body: "Save on tracked delivery while the launch promo lasts.",
-    href: "/",
-    read_at: null,
-    created_at: new Date().toISOString(),
-  },
-];
-
 export type NoticeStatus = "idle" | "loading" | "ready" | "error";
 
 export interface NotificationState {

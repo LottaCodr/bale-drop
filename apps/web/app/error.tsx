@@ -25,7 +25,7 @@ export default function Error({ error, reset }: { error: Error & { digest?: stri
         </span>
         <h1 className="mt-4 text-xl font-extrabold">Something went wrong</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          {error.message || "We could not load this screen. Your cart is safe — it is stored on your device."}
+          {error.message || "We could not load this screen. Your cart is safe because it is stored on your device."}
         </p>
         <div className="mt-5 flex flex-col justify-center gap-3 sm:flex-row">
           <Button onClick={reset}>
@@ -40,7 +40,7 @@ export default function Error({ error, reset }: { error: Error & { digest?: stri
           <Link href="/orders" className="font-semibold text-primary hover:underline">
             your orders
           </Link>{" "}
-          before paying again — escrow never charges twice.
+          before paying again. Escrow never charges twice.
         </p>
       </Card>
     </div>

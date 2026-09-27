@@ -40,7 +40,7 @@ export function ShareButton({
 
   function message(link: string): string {
     const slot = pricePerSlot ? ` at ${naira(pricePerSlot)}/slot` : "";
-    const left = slotsLeftCount ? ` — ${slotsLeftCount} slot${slotsLeftCount === 1 ? "" : "s"} left` : "";
+    const left = slotsLeftCount ? `. ${slotsLeftCount} slot${slotsLeftCount === 1 ? "" : "s"} left` : "";
     return `Join my split for ${title}${slot}${left}. Escrow protected, auto-refund if it doesn't fill: ${link}`;
   }
 
@@ -51,7 +51,7 @@ export function ShareButton({
     track("share_item", { item_name: title, channel: canShare ? "native" : "clipboard" });
     try {
       if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
-        await navigator.share({ title: `${title} — Bale Drop`, text, url: link });
+        await navigator.share({ title: `${title} | Bale Drop`, text, url: link });
         return;
       }
       await navigator.clipboard.writeText(text);

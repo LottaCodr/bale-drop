@@ -259,8 +259,9 @@ without refresh.
 
 ## Demo logins (password for all: `BaleDrop123!`)
 
-`/login` shows one-tap **Buyer / Vendor / Admin** demo buttons while
-`NEXT_PUBLIC_DEMO_LOGINS` is not `false`. Set it to `false` for real launches.
+Demo logins are not shown in the customer-facing UI. Do not create or retain
+seeded demo users in production, particularly the admin account with a known
+password. Use a separate local or staging project for these accounts.
 
 ### "Invalid login credentials" on a demo account?
 

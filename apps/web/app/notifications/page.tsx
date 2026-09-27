@@ -6,6 +6,7 @@ import { Bell, Check, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ServiceUnavailable } from "@/components/service-unavailable";
 import { isSupabaseLive } from "@/lib/config";
 import { supabaseBrowser } from "@/lib/supabase";
 import { loadNotifications, markAllNotificationsRead, markNotificationRead } from "@/lib/notifications";
@@ -19,7 +20,6 @@ import { track } from "@/lib/analytics";
  * the same unread count the bell does.
  */
 export default function NotificationsPage() {
-  const live = isSupabaseLive();
   const items = useNotificationStore((state) => state.items);
   const status = useNotificationStore((state) => state.status);
   const error = useNotificationStore((state) => state.error);
@@ -38,6 +38,8 @@ export default function NotificationsPage() {
   }
 
   const loading = status === "loading" || status === "idle";
+
+  if (!isSupabaseLive()) return <ServiceUnavailable title="Notifications are temporarily unavailable" />;
 
   return (
     <div className="container max-w-2xl py-6">
@@ -109,11 +111,6 @@ export default function NotificationsPage() {
         ))}
       </div>
 
-      {!live && (
-        <p className="mt-6 text-center text-xs text-muted-foreground">
-          Demo inbox — connect Supabase to receive real order and split notifications.
-        </p>
-      )}
     </div>
   );
 }

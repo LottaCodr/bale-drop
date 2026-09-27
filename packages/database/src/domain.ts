@@ -138,8 +138,8 @@ export function mapBaleRow(row: BaleRow, product: ProductRow, joiners: string[])
     expiresInMs: Math.max(0, expiresAt - Date.now()),
     expiresAt,
     joiners,
-    weight: product.weight_kg != null ? `${Number(product.weight_kg)}kg` : "—",
-    pieces: product.pieces_estimate ?? "—",
+    weight: product.weight_kg != null ? `${Number(product.weight_kg)}kg` : "Not specified",
+    pieces: product.pieces_estimate ?? "Not specified",
     status: row.status === "open" ? "open" : "full",
   };
 }

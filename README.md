@@ -14,8 +14,8 @@ cp apps/web/.env.example apps/web/.env   # fill in Supabase + Paystack keys
 npm run dev                               # → http://localhost:3000
 ```
 
-No keys yet? The app runs on a demo data layer (`apps/web/lib/mock.ts`) so UI
-work never blocks on backend.
+No keys yet? The public catalog and transactional screens show a service-unavailable
+state. Sample inventory and simulated payments are never served to customers.
 
 ## Routes
 
@@ -28,7 +28,7 @@ work never blocks on backend.
 | `/notifications` | Buyer/vendor notification inbox |
 | `/account/addresses` | Persistent delivery address management |
 | `/sell` | Vendor onboarding wizard (3 steps) |
-| `/login` · `/signup` · `/reset-password` | Auth: show/hide password, one-tap demo accounts, friendly errors (live Supabase; demo pass-through without keys) |
+| `/login` · `/signup` · `/reset-password` | Auth: show/hide password and friendly errors (requires configured Supabase) |
 | `/welcome` | One-time onboarding (name, phone, city) after signup / first Google sign-in |
 | `/admin` | Admin queues: approvals, moderation, disputes, payouts |
 | `/design` | Living design system (tokens + primitives) |
@@ -40,7 +40,7 @@ bale-drop/
 ├── apps/web/            # Next.js storefront + vendor + admin
 │   ├── app/             # routes (App Router)
 │   ├── components/ui/   # shadcn primitives (owned, themed)
-│   └── lib/             # utils, format, supabase, mock data layer
+│   └── lib/             # utils, formatting and data access
 ├── packages/database/   # shared Supabase clients + DB types
 ├── supabase/
 │   ├── migrations/      # 0001–0016 schema, RLS, escrow, recovery + reconciliation
@@ -52,12 +52,11 @@ bale-drop/
 
 See **[docs/SUPABASE-SETUP.md](docs/SUPABASE-SETUP.md)** — link the project →
 apply migrations `0001` through `0021` → add public keys → deploy the Edge
-Functions and configure Paystack webhooks/cron jobs. Until then the app runs on
-the mock fallback dataset; no real money is collected.
+Functions and configure Paystack webhooks/cron jobs. Until the backend is
+configured, commerce and account features fail closed.
 
-**Demo logins fail with "Invalid login credentials"?** Run
-`supabase/fix-demo-logins.sql` once in the Supabase SQL editor (details in the
-setup guide).
+Do not seed demo accounts in a production database. See the setup guide for
+local-only test account instructions.
 
 ## Docs
 

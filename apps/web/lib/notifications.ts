@@ -4,7 +4,7 @@
  */
 import { isSupabaseLive } from "./config";
 import { supabaseBrowser } from "./supabase";
-import { DEMO_NOTICES, useNotificationStore, type Notice } from "./store/notification-store";
+import { useNotificationStore, type Notice } from "./store/notification-store";
 
 const COLUMNS = "id, title, body, href, read_at, created_at";
 const LIMIT = 50;
@@ -13,7 +13,7 @@ const LIMIT = 50;
 export async function loadNotifications(): Promise<void> {
   const store = useNotificationStore.getState();
   if (!isSupabaseLive()) {
-    store.setItems(DEMO_NOTICES, null);
+    store.setItems([], null);
     return;
   }
   store.setLoading(store.userId);

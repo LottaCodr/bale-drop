@@ -1,12 +1,13 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import { AnnouncementBar, BottomNav, SiteFooter, SiteHeader } from "@/components/site-chrome";
+import { AnnouncementBar, BottomNav, Logo, SiteFooter, SiteHeader } from "@/components/site-chrome";
 import { StoreHydration, themeBootstrapScript } from "@/lib/store/hydration";
 import { cn } from "@/lib/utils";
+import { isSupabaseLive } from "@/lib/config";
 
 export const metadata: Metadata = {
   title: {
-    default: "Bale Drop — Trusted Okirika, Split Bales",
+    default: "Bale Drop | Trusted Okirika, Split Bales",
     template: "%s | Bale Drop",
   },
   description:
@@ -42,13 +43,14 @@ export const viewport: Viewport = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const available = isSupabaseLive();
   return (
     <html lang="en-NG" suppressHydrationWarning>
       <head>
         {/* Applies the saved theme before first paint — no light→dark flash. */}
         <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />
       </head>
-      <body className={cn("min-h-screen bg-background font-sans text-foreground antialiased")}>
+      <body className={cn("flex min-h-screen flex-col bg-background font-sans text-foreground antialiased")}>
         <StoreHydration />
         <a
           href="#main"
@@ -56,13 +58,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         >
           Skip to content
         </a>
-        <AnnouncementBar />
-        <SiteHeader />
-        <main id="main" className="pb-28 md:pb-0">
+        {available ? <><AnnouncementBar /><SiteHeader /></> : (
+          <header className="border-b bg-card"><div className="container flex h-16 items-center"><Logo /></div></header>
+        )}
+        <main id="main" className={cn("flex-1", available && "pb-28 md:pb-0")}>
           {children}
         </main>
-        <SiteFooter />
-        <BottomNav />
+        {available && <><SiteFooter /><BottomNav /></>}
       </body>
     </html>
   );

@@ -64,7 +64,7 @@ export const POLICIES: Policy[] = [
       {
         heading: "Buyer obligations",
         body: [
-          "Pay for the slot you claim within the reservation window. Inspect your delivery on arrival and confirm it — or open a dispute with evidence — inside the release window.",
+          "Pay for the slot you claim within the reservation window. Inspect your delivery on arrival and confirm it within the release window. If there is a problem, open a dispute with evidence before that window closes.",
           "Do not misuse the platform: no fraudulent chargebacks, no fake evidence, no automated scraping, and no attempts to take payments off-platform to avoid the escrow protections you would otherwise have.",
         ],
       },
@@ -125,7 +125,7 @@ export const POLICIES: Policy[] = [
       {
         heading: "Your money is held, not handed over",
         body: [
-          "When you pay, Bale Drop holds the funds. The vendor is not paid until you confirm delivery or the release window closes — 48 hours after the delivery is marked complete, whichever comes first.",
+          "When you pay, Bale Drop holds the funds. The vendor is paid when you confirm delivery or when the release window closes, whichever happens first. The release window closes 48 hours after delivery is marked complete.",
         ],
       },
       {
@@ -139,14 +139,14 @@ export const POLICIES: Policy[] = [
       {
         heading: "How to dispute",
         body: [
-          "Open Disputes & refunds from the order in Orders, before the release window closes, and attach photos or a PDF — evidence decides grade and delivery disputes fastest.",
+          "Open Disputes & refunds from the order in Orders, before the release window closes, and attach photos or a PDF. Evidence helps us resolve grade and delivery disputes faster.",
           "We review the evidence from both sides. Refunds go back on the same payment route, and where Paystack can reverse the charge, the refund is returned to your card or transfer account within 5–10 business days of approval.",
         ],
       },
       {
         heading: "Not refundable",
         body: [
-          "Change of mind after the item arrives as described — thrift stock is sold as-graded. You can also ask a vendor for a goodwill return, which they may accept at their discretion.",
+          "Change of mind after the item arrives as described. Thrift stock is sold as graded. You can also ask a vendor for a goodwill return, which they may accept at their discretion.",
           "Grade C items sold as Grade C, where the listing described the faults you are disputing.",
           "Requests raised after the release window has closed and the vendor has been paid; at that point we can only mediate, not reverse.",
         ],
@@ -177,7 +177,7 @@ export const POLICIES: Policy[] = [
       {
         heading: "On the day",
         body: [
-          "The courier calls the phone number on the order. If delivery fails twice, the parcel returns to the vendor's pick-up point and Support will help you rebook — a rebooking fee may apply.",
+          "The courier calls the phone number on the order. If delivery fails twice, the parcel returns to the vendor's pick-up point and Support will help you rebook. A rebooking fee may apply.",
           "Track every step in Orders; the tracking reference appears there as soon as the vendor marks the parcel in transit.",
         ],
       },

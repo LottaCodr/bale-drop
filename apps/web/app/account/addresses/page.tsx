@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { isSupabaseLive } from "@/lib/config";
 import { supabaseBrowser } from "@/lib/supabase";
+import { ServiceUnavailable } from "@/components/service-unavailable";
 
 type Address = { id: string; label: string; full_address: string; city: string; phone: string; is_default: boolean; created_at?: string };
 type AddressForm = Omit<Address, "id" | "created_at" | "is_default"> & { is_default: boolean };
@@ -16,7 +17,7 @@ const EMPTY: AddressForm = { label: "Home", full_address: "", city: "", phone: "
 
 export default function AddressesPage() {
   const live = isSupabaseLive();
-  const [addresses, setAddresses] = useState<Address[]>(live ? [] : [{ id: "demo", label: "Home", full_address: "14 Admiralty Way, Lekki Phase 1", city: "Lagos", phone: "0803 123 4567", is_default: true }]);
+  const [addresses, setAddresses] = useState<Address[]>([]);
   const [form, setForm] = useState<AddressForm>(EMPTY);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(live);
@@ -45,12 +46,6 @@ export default function AddressesPage() {
     event.preventDefault();
     setError(null);
     if (form.full_address.trim().length < 5 || form.city.trim().length < 2 || form.phone.replace(/\D/g, "").length < 10) { setError("Add a complete address, city and phone number."); return; }
-    if (!live) {
-      const id = editingId ?? `demo-${Date.now()}`;
-      setAddresses((current) => [...current.filter((item) => item.id !== id).map((item) => form.is_default ? { ...item, is_default: false } : item), { ...form, id }]);
-      resetForm();
-      return;
-    }
     setSaving(true);
     const sb = supabaseBrowser();
     const { data: { user } } = await sb.auth.getUser();
@@ -72,7 +67,6 @@ export default function AddressesPage() {
   }
 
   async function makeDefault(address: Address) {
-    if (!live) { setAddresses((current) => current.map((item) => ({ ...item, is_default: item.id === address.id }))); return; }
     const sb = supabaseBrowser();
     const { data: { user } } = await sb.auth.getUser();
     if (!user) return;
@@ -83,12 +77,13 @@ export default function AddressesPage() {
 
   async function remove(address: Address) {
     if (!window.confirm(`Delete ${address.label} address?`)) return;
-    if (!live) { setAddresses((current) => current.filter((item) => item.id !== address.id)); return; }
     const sb = supabaseBrowser();
     const { error: deleteError } = await sb.from("addresses").delete().eq("id", address.id);
     if (deleteError) { setError(deleteError.message); return; }
     setAddresses((current) => current.filter((item) => item.id !== address.id));
   }
+
+  if (!live) return <ServiceUnavailable title="Saved addresses are unavailable" />;
 
   return <div className="container max-w-3xl py-6"><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-semibold text-primary"><Link href="/orders" className="hover:underline">Account</Link> / Delivery</p><h1 className="mt-1 text-2xl font-extrabold tracking-tight">Saved delivery addresses</h1><p className="mt-1 text-sm text-muted-foreground">Save once, check out faster. Your address is only visible to you and our delivery team.</p></div>{!editingId && <Button variant="outline" onClick={() => setEditingId("new")}><Plus /> Add address</Button>}</div>
     {error && <p role="alert" className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</p>}

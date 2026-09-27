@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ServiceUnavailable } from "@/components/service-unavailable";
+import { isSupabaseLive } from "@/lib/config";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
@@ -110,6 +112,8 @@ export default function CartPage() {
     track("add_payment_info", { promo_code: code });
   }
 
+  if (!isSupabaseLive()) return <ServiceUnavailable title="Cart is temporarily unavailable" />;
+
   if (!mounted) {
     return (
       <div className="container max-w-4xl py-12">
@@ -129,7 +133,7 @@ export default function CartPage() {
           </span>
           <h1 className="mt-4 text-2xl font-extrabold tracking-tight">Your cart is empty</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Browse live bale splits or single pieces — everything is escrow protected.
+            Browse live bale splits or single pieces. Every order is escrow protected.
           </p>
           <div className="mt-5 flex flex-col justify-center gap-3 sm:flex-row">
             <Button asChild>
@@ -172,7 +176,7 @@ export default function CartPage() {
           )}
           {repriced.map((change) => (
             <p key={change.productId} className="mt-1 text-amber-900 dark:text-amber-100">
-              <b>{change.title}</b> price changed from {naira(change.from)} to {naira(change.to)} — your cart was
+              <b>{change.title}</b> price changed from {naira(change.from)} to {naira(change.to)}. Your cart was
               updated.
             </p>
           ))}
@@ -290,7 +294,7 @@ export default function CartPage() {
 
           <p className="flex items-start gap-2 text-xs text-muted-foreground">
             <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            Prices are confirmed by our server when you pay. If anything changed, we tell you before the charge —
+            Prices are confirmed by our server when you pay. If anything changed, we tell you before the charge,
             never after.
           </p>
         </div>
