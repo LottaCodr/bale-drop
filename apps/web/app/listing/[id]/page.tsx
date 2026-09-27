@@ -279,9 +279,10 @@ export default async function ListingPage({ params }: { params: Promise<{ id: st
 
       <RecentlyViewedRail excludeId={product.id} />
 
-      {/* Sticky mobile buy bar (sits above bottom nav) */}
-      <div className="fixed inset-x-0 bottom-16 z-30 border-t bg-background/95 backdrop-blur md:hidden">
-        <div className="container flex items-center gap-3 py-2.5">
+      {/* Sticky mobile buy bar — docks above the bottom nav while you scroll,
+          then settles into flow at the end of the page (never covers the footer). */}
+      <div className="sticky inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-30 -mx-4 mt-6 border-t bg-background/95 px-4 backdrop-blur md:hidden">
+        <div className="flex items-center gap-3 py-2.5">
           <div className="min-w-0">
             <div className="truncate text-lg font-extrabold tabular-nums">{naira(perSlot)}</div>
             <div className="truncate text-xs text-muted-foreground">{bale ? "per slot" : vendor.shopName}</div>

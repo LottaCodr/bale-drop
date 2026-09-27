@@ -606,6 +606,26 @@ function CheckoutExperience() {
           )}
         </div>
       </div>
+
+      {/* Mobile sticky pay bar — total + pay in the thumb zone, never covering the footer. */}
+      <div className="sticky inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-30 -mx-4 mt-6 border-t bg-background/95 px-4 backdrop-blur md:hidden">
+        <div className="flex items-center gap-3 py-2.5">
+          <div className="min-w-0">
+            <div className="truncate text-lg font-extrabold tabular-nums">{naira(total)}</div>
+            <div className="truncate text-[11px] text-muted-foreground">
+              Total • {delivery === "express" ? "1 day" : "2–4 days"} delivery
+            </div>
+          </div>
+          <Button size="lg" className="ml-auto shrink-0" onClick={pay} disabled={paymentState === "processing"}>
+            {paymentState === "processing" ? (
+              <Loader2 className="animate-spin" />
+            ) : (
+              <Lock />
+            )}
+            {paymentState === "processing" ? "Opening…" : "Pay now"}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

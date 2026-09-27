@@ -29,14 +29,14 @@ import { cn } from "@/lib/utils";
 
 /* ---------- Brand ---------- */
 
-export function Logo({ compact = false }: { compact?: boolean }) {
+export function Logo({ compact = false, responsive = false }: { compact?: boolean; responsive?: boolean }) {
   return (
     <Link href="/" className="flex items-center gap-2" aria-label="Bale Drop home">
       <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow">
         <Package className="h-5 w-5" />
       </span>
       {!compact && (
-        <span className="text-lg font-extrabold tracking-tight">
+        <span className={cn("text-lg font-extrabold tracking-tight", responsive && "hidden min-[360px]:inline")}>
           Bale<span className="text-primary">Drop</span>
         </span>
       )}
@@ -59,19 +59,20 @@ export function AnnouncementBar() {
 
 export function SiteHeader() {
   return (
-    <header className="sticky top-0 z-40 border-b bg-background/90 backdrop-blur">
-      <div className="container flex h-16 items-center gap-3">
-        <Logo />
+    // pt keeps the sticky chrome clear of notches / status bars (viewport-fit: cover).
+    <header className="sticky top-0 z-40 border-b bg-background/90 pt-[env(safe-area-inset-top)] backdrop-blur">
+      <div className="container flex h-16 items-center gap-2 sm:gap-3">
+        <Logo responsive />
         {/* Desktop search — real /search route (was a dead anchor) */}
         <div className="mx-auto hidden w-full max-w-xl flex-1 md:block">
           <SearchField />
         </div>
-        <div className="ml-auto flex items-center gap-1.5 md:ml-0">
+        <div className="ml-auto flex items-center gap-1 sm:gap-1.5">
           <CityPicker />
           <Badge variant="verified" className="hidden xl:inline-flex">
             <ShieldCheck /> Escrow protected
           </Badge>
-          <Button variant="ghost" size="icon" aria-label="Wishlist" className="relative hidden sm:inline-flex" asChild>
+          <Button variant="ghost" size="icon" aria-label="Wishlist" className="relative hidden h-9 w-9 sm:inline-flex sm:h-10 sm:w-10" asChild>
             <Link href="/wishlist">
               <Heart className="h-5 w-5" />
               <WishlistCount />
@@ -79,7 +80,7 @@ export function SiteHeader() {
           </Button>
           <NotificationBell />
           <ThemeToggle />
-          <Button variant="ghost" size="icon" aria-label="Cart" className="relative" asChild>
+          <Button variant="ghost" size="icon" aria-label="Cart" className="relative h-9 w-9 sm:h-10 sm:w-10" asChild>
             <Link href="/cart">
               <ShoppingBag className="h-5 w-5" />
               <CartCount />
@@ -193,7 +194,7 @@ export function SiteFooter() {
             The most trusted Okirika commerce experience in Nigeria. Verified listings, secure escrow
             payments, tracked delivery.
           </p>
-          <div className="mt-3 flex gap-2">
+          <div className="mt-3 flex flex-wrap gap-2">
             <Badge variant="verified">
               <ShieldCheck /> Escrow protected
             </Badge>
@@ -229,7 +230,8 @@ export function SiteFooter() {
         </nav>
       </div>
       <div className="border-t">
-        <div className="container flex flex-col items-center justify-between gap-2 py-4 text-[13px] text-muted-foreground sm:flex-row">
+        {/* pb clears the fixed mobile bottom nav (and its safe-area inset). */}
+        <div className="container flex flex-col items-center justify-between gap-2 py-4 pb-[calc(3.75rem+env(safe-area-inset-bottom))] text-[13px] text-muted-foreground sm:flex-row md:pb-4">
           <span>© 2026 Bale Drop. All rights reserved.</span>
           <nav aria-label="Legal" className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
             <Link href="/policies" className="hover:text-foreground">Policies</Link>

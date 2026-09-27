@@ -67,7 +67,7 @@ export function NotificationBell() {
       variant="ghost"
       size="icon"
       aria-label={unread > 0 ? `Notifications, ${unread} unread` : "Notifications"}
-      className="relative"
+      className="relative h-9 w-9 sm:h-10 sm:w-10"
       asChild
     >
       <Link href="/notifications">

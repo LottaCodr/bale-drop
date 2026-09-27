@@ -19,7 +19,7 @@ export function BuyPanel({ product, vendor }: { product: Product; vendor: Vendor
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-baseline gap-2">
+      <div className="flex flex-wrap items-baseline gap-2">
         <span className="text-3xl font-extrabold tabular-nums">{naira(product.price)}</span>
         {product.oldPrice && (
           <>
@@ -38,9 +38,9 @@ export function BuyPanel({ product, vendor }: { product: Product; vendor: Vendor
         </span>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <AddToCartButton product={product} vendor={vendor} qty={qty} />
-        <Button size="lg" asChild>
+      <div className="grid grid-cols-2 gap-2 sm:gap-3">
+        <AddToCartButton product={product} vendor={vendor} qty={qty} className="px-2 sm:px-6" />
+        <Button size="lg" className="px-2 sm:px-6" asChild>
           <Link href={`/checkout?product=${encodeURIComponent(product.id)}`}>
             <Zap /> Buy now
           </Link>

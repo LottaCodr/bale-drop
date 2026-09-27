@@ -251,15 +251,15 @@ export function BaleWidget({
                   key={i}
                   role="listitem"
                   title={joiner ? `Claimed by ${joiner}` : "Claimed"}
-                  className="flex h-11 items-center justify-center rounded-xl bg-primary text-sm font-bold text-primary-foreground"
+                  className="flex h-11 min-w-0 items-center justify-center overflow-hidden rounded-xl bg-primary px-1 text-sm font-bold text-primary-foreground"
                 >
-                  {joiner ?? <Check className="h-4 w-4" />}
+                  {joiner ? <span className="truncate">{joiner}</span> : <Check className="h-4 w-4" />}
                 </div>
               ) : (
                 <div
                   key={i}
                   role="listitem"
-                  className="flex h-11 items-center justify-center rounded-xl border-2 border-dashed border-amber-400 bg-amber-50 text-sm font-bold text-amber-700 dark:bg-amber-950/30 dark:text-amber-300"
+                  className="flex h-11 min-w-0 items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-amber-400 bg-amber-50 px-1 text-sm font-bold text-amber-700 dark:bg-amber-950/30 dark:text-amber-300"
                 >
                   {i + 1}
                 </div>
@@ -276,7 +276,7 @@ export function BaleWidget({
           </p>
         )}
         {!claimed && (
-          <Button size="lg" variant="accent" className="w-full text-base" onClick={handleClaim} disabled={claiming || left === 0}>
+          <Button size="lg" variant="accent" className="w-full text-sm sm:text-base" onClick={handleClaim} disabled={claiming || left === 0}>
             {claiming ? "Reserving…" : left === 0 ? "Split full" : `Claim slot: ${naira(perSlot)}`}
           </Button>
         )}
@@ -285,10 +285,10 @@ export function BaleWidget({
             <p className="flex items-center gap-1.5 text-sm font-bold text-amber-800 dark:text-amber-200">
               <Clock className="h-4 w-4" /> {reservationLabel(claimExpiresAt, now)}
             </p>
-            <Button size="lg" className="w-full text-base" onClick={payForSlot} disabled={paymentStarting}>
-              {paymentStarting ? "Opening Paystack…" : `Pay ${naira(perSlot)} with Paystack`}
+            <Button size="lg" className="w-full text-sm sm:text-base" onClick={payForSlot} disabled={paymentStarting}>
+              {paymentStarting ? "Opening Paystack…" : `Pay ${naira(perSlot)}`}
             </Button>
-            <p className="text-center text-xs text-muted-foreground">Card • Bank transfer • USSD</p>
+            <p className="text-center text-xs text-muted-foreground">Paystack: Card • Bank transfer • USSD</p>
           </div>
         )}
         {paid && (

@@ -30,6 +30,7 @@ export function ThemeToggle() {
       size="icon"
       aria-label={LABEL[current]}
       title={LABEL[current]}
+      className="h-9 w-9 sm:h-10 sm:w-10"
       onClick={() => setTheme(ORDER[(ORDER.indexOf(current) + 1) % ORDER.length] ?? "system")}
     >
       <Icon className="h-5 w-5" />

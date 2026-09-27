@@ -44,9 +44,11 @@ export function AuthButton() {
   }
   if (!email) {
     return (
-      <Button size="sm" variant="outline" asChild>
+      <Button size="sm" variant="outline" aria-label="Sign in" asChild>
         <Link href="/login">
-          <User /> Sign in
+          <User />
+          {/* Label only where the header row has room for it (see SiteHeader). */}
+          <span className="hidden sm:inline">Sign in</span>
         </Link>
       </Button>
     );

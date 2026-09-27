@@ -146,7 +146,7 @@ export function AdminConsole() {
         ].map(([k, v]) => (
           <Card key={k} className="p-4">
             <p className="text-[13px] text-muted-foreground">{k}</p>
-            <p className="text-xl font-extrabold tabular-nums">{v}</p>
+            <p className="text-base font-extrabold tabular-nums break-words sm:text-xl">{v}</p>
           </Card>
         ))}
       </div>
@@ -185,7 +185,7 @@ export function AdminConsole() {
                 {decided[v.id] ? (
                   <Badge variant={decided[v.id] === "Approved" ? "verified" : "live"}>{decided[v.id]}</Badge>
                 ) : (
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <Button variant="outline" size="sm"><Eye /> Docs</Button>
                     <Button size="sm" onClick={() => decide(v.id, "Approved")} disabled={actionBusy === v.id}>{actionBusy === v.id ? <Loader2 className="animate-spin" /> : <Check />} Approve</Button>
                     <Button variant="destructive" size="sm" onClick={() => decide(v.id, "Rejected")} disabled={actionBusy === v.id}><X /> Reject</Button>
@@ -207,7 +207,7 @@ export function AdminConsole() {
                 {decided[p.id] ? (
                   <Badge variant={decided[p.id] === "Live" ? "verified" : "live"}>{decided[p.id]}</Badge>
                 ) : (
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <Button size="sm" onClick={() => decide(p.id, "Live")} disabled={actionBusy === p.id}>{actionBusy === p.id ? <Loader2 className="animate-spin" /> : <Check />} Approve</Button>
                     <Button variant="destructive" size="sm" onClick={() => decide(p.id, "Rejected")} disabled={actionBusy === p.id}><X /> Reject</Button>
                   </div>

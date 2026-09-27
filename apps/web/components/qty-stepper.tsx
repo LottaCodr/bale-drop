@@ -30,7 +30,7 @@ export function QtyStepper({
     >
       <button
         type="button"
-        className="flex h-10 w-10 items-center justify-center rounded-l-xl text-foreground transition hover:bg-muted disabled:opacity-40"
+        className="flex h-11 w-11 items-center justify-center rounded-l-xl text-foreground transition hover:bg-muted disabled:opacity-40"
         onClick={() => onChange(Math.max(min, value - 1))}
         disabled={value <= min}
         aria-label={`Decrease ${label.toLowerCase()}`}
@@ -42,7 +42,7 @@ export function QtyStepper({
       </span>
       <button
         type="button"
-        className="flex h-10 w-10 items-center justify-center rounded-r-xl text-foreground transition hover:bg-muted disabled:opacity-40"
+        className="flex h-11 w-11 items-center justify-center rounded-r-xl text-foreground transition hover:bg-muted disabled:opacity-40"
         onClick={() => onChange(Math.min(max, value + 1))}
         disabled={value >= max}
         aria-label={`Increase ${label.toLowerCase()}`}

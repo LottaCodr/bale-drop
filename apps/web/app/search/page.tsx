@@ -61,7 +61,7 @@ function FilterChip({
       href={href}
       aria-current={active ? "true" : undefined}
       className={cn(
-        "flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-2 text-[13px] font-semibold transition",
+        "flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-2.5 text-[13px] font-semibold transition",
         active ? "border-primary bg-primary text-primary-foreground" : "bg-card hover:border-primary/50"
       )}
     >

@@ -73,7 +73,7 @@ export default function WishlistPage() {
 
       <Card className="mt-5 divide-y p-0">
         {items.map((item) => (
-          <div key={item.productId} className="flex items-center gap-3 p-4">
+          <div key={item.productId} className="flex flex-wrap items-center gap-3 p-4">
             <Link href={`/listing/${item.productId}`} className="w-16 shrink-0 overflow-hidden rounded-xl border">
               <ProductArtFallback hue={item.hue} category={item.category} className="aspect-square w-full" />
             </Link>
@@ -87,9 +87,11 @@ export default function WishlistPage() {
               </p>
               <p className="mt-1 text-sm font-extrabold tabular-nums">{naira(item.price)}</p>
             </div>
-            <div className="flex shrink-0 flex-col gap-2">
+            {/* Stacks under the item details on the narrowest screens. */}
+            <div className="flex w-full shrink-0 flex-row gap-2 sm:w-auto sm:flex-col">
               <Button
                 size="sm"
+                className="flex-1 sm:flex-none"
                 onClick={() => {
                   addToCart(item);
                   track("add_to_cart", { item_id: item.productId, item_name: item.title, value: item.price, source: "wishlist" });
@@ -100,7 +102,7 @@ export default function WishlistPage() {
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-muted-foreground"
+                className="flex-1 text-muted-foreground sm:flex-none"
                 onClick={() => {
                   remove(item.productId);
                   track("remove_from_wishlist", { item_id: item.productId });
