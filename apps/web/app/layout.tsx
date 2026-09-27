@@ -50,7 +50,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Applies the saved theme before first paint — no light→dark flash. */}
         <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />
       </head>
-      <body className={cn("flex min-h-screen flex-col bg-background font-sans text-foreground antialiased")}>
+      <body suppressHydrationWarning className={cn("flex min-h-screen flex-col bg-background font-sans text-foreground antialiased")}>
         <StoreHydration />
         <a
           href="#main"

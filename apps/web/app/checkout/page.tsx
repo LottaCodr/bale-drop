@@ -402,7 +402,6 @@ function CheckoutExperience() {
           <h1 className="text-2xl font-extrabold tracking-tight">Checkout</h1>
           <p className="mt-1 text-sm text-muted-foreground">Cart → delivery → Pay. One page, no surprises.</p>
         </div>
-        {live && <Badge variant="outline">Paystack checkout</Badge>}
       </div>
 
       {paymentError && (
@@ -595,9 +594,6 @@ function CheckoutExperience() {
                 <>Pay {naira(total)}</>
               )}
             </Button>
-            <p className="mt-2 flex items-center justify-center gap-1 text-center text-xs text-muted-foreground">
-              <ShieldCheck className="h-3.5 w-3.5" /> Held in escrow until you confirm delivery
-            </p>
             <p className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
               <Truck className="h-3.5 w-3.5 text-primary" /> Delivery to {shipping.city || prefsCity} in {delivery === "express" ? "1 day" : "2–4 days"}
             </p>

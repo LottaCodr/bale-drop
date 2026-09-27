@@ -1,7 +1,7 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-interface AvatarProps extends React.HTMLAttributes<HTMLDivElement> {
+interface AvatarProps extends React.HTMLAttributes<HTMLSpanElement> {
   initials: string;
   hue?: number;
   size?: "xs" | "sm" | "md" | "lg";
@@ -15,13 +15,13 @@ const sizes = {
   lg: "h-14 w-14 text-lg",
 } as const;
 
-const Avatar = React.forwardRef<HTMLDivElement, AvatarProps>(
+const Avatar = React.forwardRef<HTMLSpanElement, AvatarProps>(
   ({ className, initials, hue = 160, size = "md", ...props }, ref) => (
-    <div
+    <span
       ref={ref}
       aria-hidden="true"
       className={cn(
-        "flex shrink-0 select-none items-center justify-center rounded-full font-bold text-white ring-2 ring-background",
+        "inline-flex shrink-0 select-none items-center justify-center rounded-full font-bold text-white ring-2 ring-background",
         sizes[size],
         className
       )}
@@ -29,7 +29,7 @@ const Avatar = React.forwardRef<HTMLDivElement, AvatarProps>(
       {...props}
     >
       {initials}
-    </div>
+    </span>
   )
 );
 Avatar.displayName = "Avatar";
@@ -43,9 +43,9 @@ function AvatarStack({ items, max = 5, className }: { items: { initials: string;
         <Avatar key={`${a.initials}-${i}`} initials={a.initials} hue={a.hue ?? (i * 47) % 360} size="sm" />
       ))}
       {extra > 0 && (
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-bold text-muted-foreground ring-2 ring-background">
+        <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-bold text-muted-foreground ring-2 ring-background">
           +{extra}
-        </div>
+        </span>
       )}
     </div>
   );

@@ -195,7 +195,7 @@ export function SiteFooter() {
           </p>
           <div className="mt-3 flex gap-2">
             <Badge variant="verified">
-              <ShieldCheck /> Escrow
+              <ShieldCheck /> Escrow protected
             </Badge>
             <Badge variant="outline">Paystack secured</Badge>
           </div>
