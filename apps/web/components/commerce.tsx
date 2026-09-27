@@ -189,7 +189,7 @@ export function ProductCard({ product, vendor }: { product: Product; vendor: Ven
           <span className="font-semibold text-foreground">{product.rating}</span>
           <span>• {product.sold} sold</span>
         </div>
-        <div className="mt-auto flex items-baseline gap-2 pt-1">
+        <div className="mt-auto flex flex-wrap items-baseline gap-x-2 gap-y-0 pt-1">
           <span className="text-lg font-extrabold tabular-nums">{naira(product.price)}</span>
           {product.oldPrice && (
             <span className="text-[13px] text-muted-foreground line-through tabular-nums">{naira(product.oldPrice)}</span>
@@ -291,7 +291,7 @@ export function BaleSplitCard({
 
 export function VendorCard({ vendor, productId }: { vendor: Vendor; productId?: string }) {
   return (
-    <Card className="flex items-center gap-4 p-4">
+    <Card className="flex flex-wrap items-center gap-4 p-4">
       <Avatar initials={vendor.initials} hue={vendor.hue} size="lg" />
       <div className="min-w-0 flex-1">
         <p className="flex items-center gap-1.5 font-bold">
@@ -308,12 +308,13 @@ export function VendorCard({ vendor, productId }: { vendor: Vendor; productId?: 
           <span>{vendor.sales.toLocaleString()} sales</span>
         </div>
       </div>
-      <span className="flex shrink-0 flex-col gap-2">
-        <Button variant="outline" size="sm" asChild>
+      {/* Wraps below the shop info on narrow screens; row/stack above sm. */}
+      <span className="flex w-full shrink-0 gap-2 sm:w-auto sm:flex-col">
+        <Button variant="outline" size="sm" className="flex-1 sm:flex-none" asChild>
           <Link href={`/vendor/${vendor.id}`}>Visit shop</Link>
         </Button>
         {productId && (
-          <Button variant="ghost" size="sm" asChild>
+          <Button variant="ghost" size="sm" className="flex-1 sm:flex-none" asChild>
             <Link href={`/listing/${productId}`}>Latest listing</Link>
           </Button>
         )}

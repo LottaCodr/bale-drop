@@ -341,13 +341,16 @@ export default function CartPage() {
         </div>
       </div>
 
-      {/* Mobile sticky checkout bar (thumb zone, always visible) */}
+      <RecentlyViewedRail limit={8} />
+
+      {/* Mobile sticky checkout bar — docks above the bottom nav while you scroll,
+          then settles into flow at the end of the cart so it can never cover the footer. */}
       {lines.length > 0 && (
-        <div className="fixed inset-x-0 bottom-16 z-30 border-t bg-background/95 backdrop-blur md:hidden">
-          <div className={cn("container flex items-center gap-3 py-2.5")}>
-            <div>
-              <div className="text-base font-extrabold tabular-nums">{naira(estimatedTotal)}</div>
-              <div className="text-[11px] text-muted-foreground">{count} item{count === 1 ? "" : "s"} • incl. delivery</div>
+        <div className="sticky inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-30 -mx-4 mt-6 border-t bg-background/95 px-4 backdrop-blur md:hidden">
+          <div className={cn("flex items-center gap-3 py-2.5")}>
+            <div className="min-w-0">
+              <div className="truncate text-base font-extrabold tabular-nums">{naira(estimatedTotal)}</div>
+              <div className="truncate text-[11px] text-muted-foreground">{count} item{count === 1 ? "" : "s"} • incl. delivery</div>
             </div>
             <Button className="ml-auto shrink-0" asChild>
               <Link href="/checkout" onClick={() => track("begin_checkout", { items: count, value: estimatedTotal, currency: "NGN" })}>
@@ -357,8 +360,6 @@ export default function CartPage() {
           </div>
         </div>
       )}
-
-      <RecentlyViewedRail limit={8} />
     </div>
   );
 }

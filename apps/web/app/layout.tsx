@@ -36,6 +36,9 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 5,
+  // Edge-to-edge on notched phones / gesture nav — safe-area env() values only
+  // report real insets with `cover`, which the chrome and sticky bars rely on.
+  viewportFit: "cover",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#faf7f2" },
     { media: "(prefers-color-scheme: dark)", color: "#0e1a16" },
@@ -50,7 +53,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Applies the saved theme before first paint — no light→dark flash. */}
         <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />
       </head>
-      <body suppressHydrationWarning className={cn("flex min-h-screen flex-col bg-background font-sans text-foreground antialiased")}>
+      <body suppressHydrationWarning className={cn("flex min-h-screen flex-col bg-background pt-[env(safe-area-inset-top)] font-sans text-foreground antialiased")}>
         <StoreHydration />
         <a
           href="#main"
@@ -61,7 +64,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {available ? <><AnnouncementBar /><SiteHeader /></> : (
           <header className="border-b bg-card"><div className="container flex h-16 items-center"><Logo /></div></header>
         )}
-        <main id="main" className={cn("flex-1", available && "pb-28 md:pb-0")}>
+        <main id="main" className={cn("flex-1", available && "pb-8 md:pb-0")}>
           {children}
         </main>
         {available && <><SiteFooter /><BottomNav /></>}

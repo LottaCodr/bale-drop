@@ -61,6 +61,30 @@
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "ss01", "cv11";
+    /* Long unbroken tokens (tracking numbers, refs, URLs) must never force a
+       horizontal scrollbar on small screens. */
+    overflow-wrap: break-word;
+  }
+  /* iOS Safari zooms the viewport when a focused field is under 16px, which
+     breaks layouts and hides submit buttons behind the keyboard. On touch
+     widths every form control stays at 16px; larger screens keep text-sm. */
+  @media (max-width: 767px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
+  }
+  /* Low-end phones + motion sensitivity: kill decorative animation. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
   ::selection {
     background: hsl(var(--primary) / 0.2);

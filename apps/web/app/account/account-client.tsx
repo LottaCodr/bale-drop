@@ -166,9 +166,9 @@ export function AccountClient({ live, initial }: { live: boolean; initial: Accou
               ))}
             </select>
           </div>
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <MapPin className="h-3.5 w-3.5" /> Header city is now <b className="text-foreground">{prefsCity}</b>
+              <MapPin className="h-3.5 w-3.5 shrink-0" /> Header city is now <b className="text-foreground">{prefsCity}</b>
             </p>
             <Button type="submit" disabled={saving}>
               {saving ? <Loader2 className="animate-spin" /> : <Check />} Save changes

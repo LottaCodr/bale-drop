@@ -146,22 +146,22 @@ export function VendorDashboard() {
       <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Card className="p-4">
           <p className="text-xs text-muted-foreground">Live listings</p>
-          <p className="text-2xl font-extrabold tabular-nums">{stats.active}</p>
+          <p className="text-xl font-extrabold tabular-nums break-words sm:text-2xl">{stats.active}</p>
           <p className="text-[11px] text-muted-foreground">{stats.pending} awaiting moderation</p>
         </Card>
         <Card className="p-4">
           <p className="text-xs text-muted-foreground">Listing views</p>
-          <p className="text-2xl font-extrabold tabular-nums">{stats.views.toLocaleString()}</p>
+          <p className="text-xl font-extrabold tabular-nums break-words sm:text-2xl">{stats.views.toLocaleString()}</p>
           <p className="text-[11px] text-muted-foreground">{stats.sold} units sold</p>
         </Card>
         <Card className="p-4">
           <p className="text-xs text-muted-foreground">Order value</p>
-          <p className="text-2xl font-extrabold tabular-nums">{naira(stats.revenue)}</p>
+          <p className="text-xl font-extrabold tabular-nums break-words sm:text-2xl">{naira(stats.revenue)}</p>
           <p className="text-[11px] text-muted-foreground">{orders.length} orders</p>
         </Card>
         <Card className="p-4">
           <p className="text-xs text-muted-foreground">Action needed</p>
-          <p className="text-2xl font-extrabold tabular-nums">{stats.awaiting}</p>
+          <p className="text-xl font-extrabold tabular-nums break-words sm:text-2xl">{stats.awaiting}</p>
           <p className="text-[11px] text-muted-foreground">paid orders not yet started</p>
         </Card>
       </div>
@@ -174,7 +174,7 @@ export function VendorDashboard() {
       )}
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_1.15fr]">
-        <Card className="p-5"><div className="flex items-center justify-between gap-2"><div><h2 className="font-bold">Your listings</h2><p className="text-xs text-muted-foreground">New listings enter admin moderation.</p></div><Button size="sm" onClick={() => { if (!vendor) { setError("We’re still loading your seller profile. Please try again in a moment."); return; } if (!canSubmitListings) { setError("Your seller account must be approved before you can submit listings. We’ll let you know once review is complete."); return; } setShowForm((value) => !value); }}><Plus /> New listing</Button></div>
+        <Card className="p-5"><div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="font-bold">Your listings</h2><p className="text-xs text-muted-foreground">New listings enter admin moderation.</p></div><Button size="sm" onClick={() => { if (!vendor) { setError("We’re still loading your seller profile. Please try again in a moment."); return; } if (!canSubmitListings) { setError("Your seller account must be approved before you can submit listings. We’ll let you know once review is complete."); return; } setShowForm((value) => !value); }}><Plus /> New listing</Button></div>
           {showForm && <div className="mt-4 flex flex-col gap-3 border-t pt-4"><Input placeholder="Listing title" value={form.title} onChange={(e) => update("title", e.target.value)} /><div className="grid gap-3 sm:grid-cols-2"><select value={form.category} onChange={(e) => update("category", e.target.value)} className="h-11 rounded-xl border border-input bg-background px-3 text-sm">{CATEGORIES.map((category) => <option key={category}>{category}</option>)}</select><select value={form.grade} onChange={(e) => update("grade", e.target.value as FormState["grade"])} className="h-11 rounded-xl border border-input bg-background px-3 text-sm"><option value="A">Grade A</option><option value="B">Grade B</option><option value="C">Grade C</option></select></div><div className="grid gap-3 sm:grid-cols-3"><select value={form.kind} onChange={(e) => update("kind", e.target.value as FormState["kind"])} className="h-11 rounded-xl border border-input bg-background px-3 text-sm"><option value="bale">Bale</option><option value="single">Single</option></select><Input inputMode="numeric" placeholder="Price in ₦" value={form.price} onChange={(e) => update("price", e.target.value.replace(/\D/g, ""))} /><Input inputMode="numeric" placeholder="Quantity" value={form.qty} onChange={(e) => update("qty", e.target.value.replace(/\D/g, ""))} /></div><div className="grid gap-3 sm:grid-cols-2"><select value={form.city} onChange={(e) => update("city", e.target.value)} className="h-11 rounded-xl border border-input bg-background px-3 text-sm">{CITIES.map((city) => <option key={city}>{city}</option>)}</select><Input placeholder="Approx. pieces (e.g. ~60 pcs)" value={form.pieces} onChange={(e) => update("pieces", e.target.value)} /></div><Textarea placeholder="Describe grade, condition, sizing and what buyers receive" value={form.description} onChange={(e) => update("description", e.target.value)} /><label className="flex cursor-pointer items-center gap-2 rounded-xl border border-dashed p-3 text-sm"><ImagePlus className="h-4 w-4 text-primary" />{image?.name ?? "Add a listing photo"}<input type="file" accept="image/*" className="sr-only" onChange={(e) => setImage(e.target.files?.[0] ?? null)} /></label><Button onClick={createProduct} disabled={saving}>{saving ? <><Loader2 className="animate-spin" /> Saving…</> : "Submit for review"}</Button></div>}
           <div className="mt-4 flex flex-col divide-y">{loading ? <p className="py-6 text-center text-sm text-muted-foreground"><Loader2 className="mx-auto h-4 w-4 animate-spin" /></p> : products.length === 0 ? <div className="py-6 text-center"><p className="text-sm font-semibold">No listings yet</p><p className="mt-1 text-xs text-muted-foreground">Add your first bale or single piece. It goes live after moderation (usually under 24 hours).</p></div> : products.map((product) => <div key={product.id} className="flex items-center gap-3 py-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary"><PackageCheck className="h-5 w-5" /></span><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{product.title}</p><p className="text-xs text-muted-foreground">{product.category} • Grade {product.grade} • {naira(product.price_naira)}</p></div><Badge variant={product.status === "active" ? "verified" : product.status === "rejected" ? "live" : "amber"}>{product.status}</Badge></div>)}</div>
         </Card>
