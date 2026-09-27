@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { isSupabaseLive } from "@/lib/config";
+import { friendlyErrorMessage } from "@/lib/errors";
 import { supabaseBrowser } from "@/lib/supabase";
 import { ServiceUnavailable } from "@/components/service-unavailable";
 
@@ -30,7 +31,7 @@ export default function AddressesPage() {
     sb.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) { setError("Sign in to manage delivery addresses."); setLoading(false); return; }
       const { data, error: queryError } = await sb.from("addresses").select("*").eq("profile_id", user.id).order("is_default", { ascending: false }).order("created_at", { ascending: false });
-      if (queryError) setError(queryError.message); else setAddresses(data ?? []);
+      if (queryError) setError(friendlyErrorMessage(queryError, { context: "address", fallback: "We couldn’t load your saved addresses. Please refresh and try again." })); else setAddresses(data ?? []);
       setLoading(false);
     });
   }, [live]);
@@ -55,7 +56,7 @@ export default function AddressesPage() {
     const result = editingId && editingId !== "new"
       ? await sb.from("addresses").update(payload).eq("id", editingId).eq("profile_id", user.id).select("*").single()
       : await sb.from("addresses").insert({ ...payload, profile_id: user.id }).select("*").single();
-    if (result.error) setError(result.error.message);
+    if (result.error) setError(friendlyErrorMessage(result.error, { context: "address" }));
     else {
       setAddresses((current) => {
         const next = editingId && editingId !== "new" ? current.map((item) => item.id === editingId ? result.data : item) : [...current, result.data];
@@ -79,7 +80,7 @@ export default function AddressesPage() {
     if (!window.confirm(`Delete ${address.label} address?`)) return;
     const sb = supabaseBrowser();
     const { error: deleteError } = await sb.from("addresses").delete().eq("id", address.id);
-    if (deleteError) { setError(deleteError.message); return; }
+    if (deleteError) { setError(friendlyErrorMessage(deleteError, { context: "address", fallback: "We couldn’t delete that address. Please try again." })); return; }
     setAddresses((current) => current.filter((item) => item.id !== address.id));
   }
 

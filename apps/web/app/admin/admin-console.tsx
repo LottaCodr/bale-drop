@@ -6,6 +6,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { friendlyErrorMessage } from "@/lib/errors";
 import { naira } from "@/lib/format";
 import { invokeOperation } from "@/lib/operations";
 import { listSupportMessages, resolveSupportMessage, TOPIC_LABELS, type SupportMessage } from "@/lib/support";
@@ -54,7 +55,7 @@ export function AdminConsole() {
       sb.from("orders").select("total_naira").eq("escrow_status", "held"),
     ]).then(([vendors, products, disputes, payouts, escrow]) => {
       const firstError = vendors.error ?? products.error ?? disputes.error ?? payouts.error ?? escrow.error;
-      if (firstError) setError(firstError.message);
+      if (firstError) setError(friendlyErrorMessage(firstError, { context: "admin", fallback: "We couldn’t load the admin queues. Please refresh and try again." }));
       setVendorQueue((vendors.data ?? []).map((v) => ({ id: v.id, shop: v.shop_name, city: v.city ?? "Not provided", docs: "Pending review", when: new Date(v.created_at).toLocaleDateString("en-NG") })));
       setProductQueue((products.data ?? []).map((p) => ({ id: p.id, title: p.title, vendor: p.vendor_id.slice(0, 8), grade: p.grade, price: p.price_naira })));
       setDisputeQueue((disputes.data ?? []).map((d) => ({ id: d.id, order: d.order_id.slice(0, 8), issue: d.reason, evidence: d.evidence_urls?.length ?? 0, amount: 0 })));
@@ -71,7 +72,7 @@ export function AdminConsole() {
 
   async function viewEvidence(id: string) {
     setError(null); setActionBusy(`evidence-${id}`);
-    const { data, error: actionError } = await invokeOperation<{ links?: string[] }>("dispute-evidence", { dispute_id: id });
+    const { data, error: actionError } = await invokeOperation<{ links?: string[] }>("dispute-evidence", { dispute_id: id }, { context: "admin" });
     setActionBusy(null);
     if (actionError) { setError(actionError); return; }
     setEvidenceLinks((current) => ({ ...current, [id]: data?.links ?? [] }));
@@ -86,7 +87,7 @@ export function AdminConsole() {
     if (tab === "products") body.action = verdict === "Live" ? "approve_product" : "reject_product";
     if (tab === "disputes") { body.action = "resolve_dispute"; body.resolution = verdict === "Refunded buyer" ? "buyer_refund" : "vendor_release"; }
     if (tab === "payouts") { functionName = "vendor-payout"; body = { payout_id: id, force_reconcile: true }; }
-    const { error: actionError } = await invokeOperation(functionName, body);
+    const { error: actionError } = await invokeOperation(functionName, body, { context: "admin" });
     setActionBusy(null);
     if (actionError) { setError(actionError); return; }
     setDecided((d) => ({ ...d, [id]: tab === "payouts" ? "Transfer queued" : verdict }));
@@ -104,7 +105,7 @@ export function AdminConsole() {
         )
       );
     } catch (resolveError) {
-      setError(resolveError instanceof Error ? resolveError.message : "Could not resolve this message.");
+      setError(friendlyErrorMessage(resolveError, { context: "admin", fallback: "We couldn’t resolve this support message. Please try again." }));
     } finally {
       setActionBusy(null);
     }

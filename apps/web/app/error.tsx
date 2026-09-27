@@ -6,6 +6,7 @@ import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { track } from "@/lib/analytics";
+import { friendlyErrorMessage } from "@/lib/errors";
 
 /**
  * Route error boundary. A marketplace must never show a blank screen: the buyer
@@ -25,7 +26,7 @@ export default function Error({ error, reset }: { error: Error & { digest?: stri
         </span>
         <h1 className="mt-4 text-xl font-extrabold">Something went wrong</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          {error.message || "We could not load this screen. Your cart is safe because it is stored on your device."}
+          {friendlyErrorMessage(error, { fallback: "We could not load this screen. Your cart is safe because it is stored on your device." })}
         </p>
         <div className="mt-5 flex flex-col justify-center gap-3 sm:flex-row">
           <Button onClick={reset}>

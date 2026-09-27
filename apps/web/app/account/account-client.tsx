@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { friendlyErrorMessage } from "@/lib/errors";
 import { supabaseBrowser } from "@/lib/supabase";
 import { CITIES } from "@/lib/taxonomy";
 import { usePrefsStore } from "@/lib/store/prefs-store";
@@ -95,7 +96,7 @@ export function AccountClient({ live, initial }: { live: boolean; initial: Accou
       .eq("id", user.id);
     setSaving(false);
     if (updateError) {
-      setError(updateError.message);
+      setError(friendlyErrorMessage(updateError, { context: "account" }));
       return;
     }
     setFields((current) => ({ ...current, phone: formatNigerianPhone(phone) }));

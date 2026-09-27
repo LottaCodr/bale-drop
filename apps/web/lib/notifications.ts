@@ -3,6 +3,7 @@
  * can never disagree about what is unread.
  */
 import { isSupabaseLive } from "./config";
+import { friendlyErrorMessage } from "./errors";
 import { supabaseBrowser } from "./supabase";
 import { useNotificationStore, type Notice } from "./store/notification-store";
 
@@ -33,12 +34,12 @@ export async function loadNotifications(): Promise<void> {
       .order("created_at", { ascending: false })
       .limit(LIMIT);
     if (error) {
-      useNotificationStore.getState().setError(error.message);
+      useNotificationStore.getState().setError(friendlyErrorMessage(error, { context: "notifications" }));
       return;
     }
     useNotificationStore.getState().setItems((data ?? []) as Notice[], user.id);
   } catch (err) {
-    useNotificationStore.getState().setError(err instanceof Error ? err.message : "Could not load notifications");
+    useNotificationStore.getState().setError(friendlyErrorMessage(err, { context: "notifications" }));
   }
 }
 
