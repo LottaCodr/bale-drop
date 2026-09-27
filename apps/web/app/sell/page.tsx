@@ -22,8 +22,10 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { supabaseBrowser } from "@/lib/supabase";
 import { isSupabaseLive } from "@/lib/config";
+import { friendlyErrorMessage } from "@/lib/errors";
 import { naira } from "@/lib/format";
 import { track } from "@/lib/analytics";
+import { invokeOperation } from "@/lib/operations";
 import { CITIES } from "@/lib/taxonomy";
 import { formatNigerianPhone } from "@/lib/auth/validation";
 import { cn } from "@/lib/utils";
@@ -174,7 +176,7 @@ export default function SellPage() {
         .select("id, verification_status")
         .eq("profile_id", user.id)
         .maybeSingle();
-      if (existingVendorError) throw new Error(existingVendorError.message);
+      if (existingVendorError) throw existingVendorError;
       if (existingVendor && ["approved", "inspected"].includes(existingVendor.verification_status)) {
         throw new Error("This account already has an approved vendor profile.");
       }
@@ -189,7 +191,7 @@ export default function SellPage() {
       const { data: vendor, error: vendorErr } = existingVendor
         ? await sb.from("vendor_profiles").update(vendorPayload).eq("id", existingVendor.id).select("id, verification_status").single()
         : await sb.from("vendor_profiles").insert({ ...vendorPayload, profile_id: user.id }).select("id, verification_status").single();
-      if (vendorErr) throw new Error(vendorErr.message);
+      if (vendorErr) throw vendorErr;
 
       // 2) document uploads (private bucket, folder = user id)
       for (const doc of DOCS) {
@@ -199,25 +201,27 @@ export default function SellPage() {
           cacheControl: "3600",
           upsert: false,
         });
-        if (upErr) throw new Error(`Upload failed (${doc.label}): ${upErr.message}`);
+        if (upErr) throw new Error(`We couldn’t upload ${doc.label}. Please check the file and try again.`);
         const { error: docErr } = await sb.from("vendor_documents").insert({
           vendor_id: vendor.id,
           type: doc.dbType,
           storage_path: path,
         });
-        if (docErr) throw new Error(docErr.message);
+        if (docErr) throw docErr;
       }
 
       // 3) promote the account server-side; clients cannot write role.
-      const { error: roleErr } = await sb.functions.invoke("vendor-onboard", {
-        body: { vendor_id: vendor.id, resubmit: existingVendor?.verification_status === "rejected" },
-      });
-      if (roleErr) throw new Error(roleErr.message);
+      const { error: roleErr } = await invokeOperation(
+        "vendor-onboard",
+        { vendor_id: vendor.id, resubmit: existingVendor?.verification_status === "rejected" },
+        { context: "vendorApplication" }
+      );
+      if (roleErr) throw new Error(roleErr);
 
       setReference(`VD-${vendor.id.slice(0, 4).toUpperCase()}`);
       router.refresh(); // role is now vendor — refresh server components
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Submission failed. Try again.");
+      setError(friendlyErrorMessage(e, { context: "vendorApplication" }));
     } finally {
       setSubmitting(false);
     }

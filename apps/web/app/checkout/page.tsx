@@ -316,7 +316,7 @@ function CheckoutExperience() {
     if (error || !data) {
       if (!retrySameAttempt) orderIdempotencyKey.current = null;
       setPaymentState("idle");
-      setPaymentError(error ?? "Could not start payment.");
+      setPaymentError(error ?? "We couldn’t start payment right now. Please try again.");
       return;
     }
     if (data.already_processed) {
@@ -328,7 +328,7 @@ function CheckoutExperience() {
     }
     if (!data.authorization_url) {
       setPaymentState("idle");
-      setPaymentError("Paystack did not return an authorization link.");
+      setPaymentError("We couldn’t open the payment page. Please try again in a few minutes.");
       return;
     }
     track("place_order", { value: data.amount_naira ?? total, currency: "NGN", transaction_id: data.reference });

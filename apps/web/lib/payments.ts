@@ -1,3 +1,4 @@
+import { friendlyErrorMessage, functionErrorMessage } from "@/lib/errors";
 import { supabaseBrowser } from "@/lib/supabase";
 
 export type PaymentKind = "order" | "slot";
@@ -47,18 +48,21 @@ export async function initializePayment(
     body: input,
   });
   if (error) {
-    let message = error.message || "Could not start payment";
     let retrySameAttempt = false;
     const context = (error as { context?: unknown }).context;
     if (context instanceof Response) {
       const payload = await context.clone().json().catch(() => null) as { error?: string; retry_same_attempt?: boolean } | null;
-      if (payload?.error) message = payload.error;
       retrySameAttempt = payload?.retry_same_attempt === true;
     }
-    return { data: null, error: message, retry_same_attempt: retrySameAttempt };
+    const payloadMessage = await functionErrorMessage(error);
+    return {
+      data: null,
+      error: friendlyErrorMessage(payloadMessage ?? error, { context: "payment" }),
+      retry_same_attempt: retrySameAttempt,
+    };
   }
   if (!data?.reference || !data.payment_session_id || (!data.already_processed && !data.authorization_url)) {
-    return { data: null, error: "Payment service returned an incomplete response", retry_same_attempt: false };
+    return { data: null, error: friendlyErrorMessage("Payment service returned an incomplete response", { context: "payment" }), retry_same_attempt: false };
   }
   return { data, error: null };
 }

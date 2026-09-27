@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { ProductArt } from "@/components/commerce";
 import { isSupabaseLive } from "@/lib/config";
+import { friendlyErrorMessage } from "@/lib/errors";
 import { naira } from "@/lib/format";
 import { supabaseBrowser } from "@/lib/supabase";
 import { invokeOperation } from "@/lib/operations";
@@ -168,7 +169,7 @@ export function OrdersClient() {
         .order("created_at", { ascending: false });
       if (orderError) {
         if (active) {
-          setError(orderError.message);
+          setError(friendlyErrorMessage(orderError, { context: "order" }));
           setLoading(false);
         }
         return;
@@ -238,7 +239,7 @@ export function OrdersClient() {
 
   async function confirmDelivery(orderId: string) {
     setError(null); setNotice(null); setActionBusy(orderId);
-    const { error: actionError } = await invokeOperation("order-action", { action: "confirm_delivery", order_id: orderId });
+    const { error: actionError } = await invokeOperation("order-action", { action: "confirm_delivery", order_id: orderId }, { context: "orderAction" });
     setActionBusy(null);
     if (actionError) { setError(actionError); return; }
     setNotice("Delivery confirmed. Escrow has been released and the vendor payout is queued.");
@@ -288,7 +289,7 @@ export function OrdersClient() {
         added += 1;
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not reorder");
+      setError(friendlyErrorMessage(err, { context: "reorder" }));
     }
     setActionBusy(null);
     if (added === 0) {
@@ -304,7 +305,7 @@ export function OrdersClient() {
     setError(null); setNotice(null); setActionBusy(`review-${order.id}`);
     const { error: actionError } = await invokeOperation("review-create", {
       order_id: order.id, rating: reviewRating, body: reviewBody, product_id: order.productId,
-    });
+    }, { context: "review" });
     setActionBusy(null);
     if (actionError) { setError(actionError); return; }
     setReviewedOrders((current) => [...current, order.id]); setReviewOrder(null); setReviewBody(""); setReviewRating(5);
@@ -327,7 +328,7 @@ export function OrdersClient() {
         if (uploadError) {
           if (evidencePaths.length) await sb.storage.from("dispute-evidence").remove(evidencePaths);
           setActionBusy(null);
-          setError(uploadError.message);
+          setError(friendlyErrorMessage(uploadError, { context: "upload" }));
           return;
         }
         evidencePaths.push(path);
@@ -335,7 +336,7 @@ export function OrdersClient() {
     }
     const { error: actionError } = await invokeOperation("order-action", {
       action: "open_dispute", order_id: orderId, reason: disputeReason, description: disputeDescription, evidence_urls: evidencePaths,
-    });
+    }, { context: "orderAction" });
     setActionBusy(null);
     if (actionError) {
       if (evidencePaths.length) await supabaseBrowser().storage.from("dispute-evidence").remove(evidencePaths);

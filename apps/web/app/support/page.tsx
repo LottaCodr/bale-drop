@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { supabaseBrowser } from "@/lib/supabase";
 import { isSupabaseLive } from "@/lib/config";
 import { TOPIC_LABELS, SUPPORT_TOPICS, sendSupportMessage, type SupportTopic } from "@/lib/support";
+import { friendlyErrorMessage } from "@/lib/errors";
 import { track } from "@/lib/analytics";
 
 /**
@@ -59,7 +60,7 @@ export default function SupportPage() {
       track("support_open", { topic });
       setDone(true);
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Could not send your message.");
+      setError(friendlyErrorMessage(submitError, { context: "support" }));
     } finally {
       setBusy(false);
     }

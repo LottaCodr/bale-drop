@@ -4,8 +4,9 @@
  * RLS does the enforcement (insert-only for guests, author/admin read); this
  * module's job is to make the shapes and failure messages usable in the UI.
  */
-import { supabaseBrowser } from "@/lib/supabase";
 import { isSupabaseLive } from "@/lib/config";
+import { friendlyErrorMessage } from "@/lib/errors";
+import { supabaseBrowser } from "@/lib/supabase";
 
 export const SUPPORT_TOPICS = ["order", "delivery", "refund", "vendor", "account", "general"] as const;
 export type SupportTopic = (typeof SUPPORT_TOPICS)[number];
@@ -59,7 +60,7 @@ export async function sendSupportMessage(input: SupportMessageInput): Promise<vo
     body: input.body.trim(),
     order_ref: input.orderRef?.trim() || null,
   });
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(friendlyErrorMessage(error, { context: "support" }));
 }
 
 /** Admin queue — RLS only returns rows when the caller is an admin. */
@@ -70,7 +71,7 @@ export async function listSupportMessages(): Promise<SupportMessage[]> {
     .select(SELECT_COLUMNS)
     .order("created_at", { ascending: false })
     .limit(100);
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(friendlyErrorMessage(error, { context: "admin" }));
   return (data ?? []) as SupportMessage[];
 }
 
@@ -80,5 +81,5 @@ export async function resolveSupportMessage(id: string): Promise<void> {
     .from("support_messages")
     .update({ status: "resolved", resolved_at: new Date().toISOString() })
     .eq("id", id);
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(friendlyErrorMessage(error, { context: "admin" }));
 }

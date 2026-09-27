@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { isSupabaseLive } from "@/lib/config";
+import { friendlyErrorMessage } from "@/lib/errors";
 import { naira } from "@/lib/format";
 import { invokeOperation } from "@/lib/operations";
 import { supabaseBrowser } from "@/lib/supabase";
@@ -49,15 +50,15 @@ export function VendorDashboard() {
     setLoading(true);
     const sb = supabaseBrowser();
     const { data: { user } } = await sb.auth.getUser();
-    if (!user) { setError("Sign in required"); setLoading(false); return; }
+    if (!user) { setError("Sign in to view your seller dashboard."); setLoading(false); return; }
     const { data: vendorRow, error: vendorError } = await sb.from("vendor_profiles").select("*").eq("profile_id", user.id).maybeSingle();
-    if (vendorError || !vendorRow) { setError(vendorError?.message ?? "Vendor profile not found"); setLoading(false); return; }
+    if (vendorError || !vendorRow) { setError(friendlyErrorMessage(vendorError ?? "Vendor profile not found", { context: "vendorDashboard" })); setLoading(false); return; }
     setVendor(vendorRow);
     const [{ data: productRows, error: productsError }, { data: orderRows, error: ordersError }] = await Promise.all([
       sb.from("products").select("*").eq("vendor_id", vendorRow.id).order("created_at", { ascending: false }),
       sb.from("orders").select("*").eq("vendor_id", vendorRow.id).order("created_at", { ascending: false }),
     ]);
-    if (productsError || ordersError) setError(productsError?.message ?? ordersError?.message ?? "Could not load dashboard");
+    if (productsError || ordersError) setError(friendlyErrorMessage(productsError ?? ordersError, { context: "vendorDashboard" }));
     setProducts(productRows ?? []);
     const rawOrders = orderRows ?? [];
     const { data: items } = rawOrders.length ? await sb.from("order_items").select("*").in("order_id", rawOrders.map((row) => row.id)) : { data: [] as ItemRow[] };
@@ -86,12 +87,16 @@ export function VendorDashboard() {
     return { active, pending, views, sold, revenue, awaiting };
   })();
 
+  const canSubmitListings = vendor?.verification_status === "approved" || vendor?.verification_status === "inspected";
+
   function update<K extends keyof FormState>(key: K, value: FormState[K]) { setForm((current) => ({ ...current, [key]: value })); }
 
   async function createProduct() {
     setError(null); setNotice(null);
     if (!live) { setNotice("Listings cannot be submitted right now. Please try again later."); return; }
-    if (!vendor || form.title.trim().length < 4 || Number(form.price) <= 0) { setError("Add a title and a valid price."); return; }
+    if (!vendor) { setError("We couldn’t find your seller profile. Please refresh and try again."); return; }
+    if (!canSubmitListings) { setError("Your seller account must be approved before you can submit listings. We’ll let you know once review is complete."); return; }
+    if (form.title.trim().length < 4 || Number(form.price) <= 0) { setError("Add a title and a valid price."); return; }
     setSaving(true);
     try {
       const sb = supabaseBrowser();
@@ -102,19 +107,20 @@ export function VendorDashboard() {
         price_naira: Math.round(Number(form.price)), qty: Math.max(1, Math.round(Number(form.qty) || 1)),
         city: form.city, pieces_estimate: form.pieces.trim() || null, status: "pending",
       }).select("*").single();
-      if (productError || !product) throw new Error(productError?.message ?? "Could not create listing");
+      if (productError) throw productError;
+      if (!product) throw new Error("Listing was not created. Please try again.");
       if (image) {
         const { data: { user } } = await sb.auth.getUser();
         if (user) {
           const path = `${user.id}/${product.id}-${image.name.replace(/[^A-Za-z0-9._-]/g, "_")}`;
           const { error: uploadError } = await sb.storage.from("product-images").upload(path, image, { upsert: false, cacheControl: "3600" });
-          if (uploadError) throw new Error(uploadError.message);
+          if (uploadError) throw uploadError;
           const { error: imageError } = await sb.from("product_images").insert({ product_id: product.id, storage_path: path, sort_order: 0 });
-          if (imageError) throw new Error(imageError.message);
+          if (imageError) throw imageError;
         }
       }
       setForm(EMPTY_FORM); setImage(null); setShowForm(false); setNotice("Listing submitted for admin moderation."); await load();
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not create listing"); }
+    } catch (caught) { setError(friendlyErrorMessage(caught, { context: "listing" })); }
     finally { setSaving(false); }
   }
 
@@ -124,7 +130,7 @@ export function VendorDashboard() {
       setError("Enter the courier tracking number before dispatching.");
       return;
     }
-    const { error: actionError } = await invokeOperation("order-action", { action: "fulfillment_status", order_id: orderId, status, tracking_number: trackingNumber?.trim() });
+    const { error: actionError } = await invokeOperation("order-action", { action: "fulfillment_status", order_id: orderId, status, tracking_number: trackingNumber?.trim() }, { context: "orderAction" });
     if (actionError) { setError(actionError); return; }
     setNotice("Order status updated."); await load();
   }
@@ -168,7 +174,7 @@ export function VendorDashboard() {
       )}
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_1.15fr]">
-        <Card className="p-5"><div className="flex items-center justify-between gap-2"><div><h2 className="font-bold">Your listings</h2><p className="text-xs text-muted-foreground">New listings enter admin moderation.</p></div><Button size="sm" onClick={() => setShowForm((value) => !value)}><Plus /> New listing</Button></div>
+        <Card className="p-5"><div className="flex items-center justify-between gap-2"><div><h2 className="font-bold">Your listings</h2><p className="text-xs text-muted-foreground">New listings enter admin moderation.</p></div><Button size="sm" onClick={() => { if (!vendor) { setError("We’re still loading your seller profile. Please try again in a moment."); return; } if (!canSubmitListings) { setError("Your seller account must be approved before you can submit listings. We’ll let you know once review is complete."); return; } setShowForm((value) => !value); }}><Plus /> New listing</Button></div>
           {showForm && <div className="mt-4 flex flex-col gap-3 border-t pt-4"><Input placeholder="Listing title" value={form.title} onChange={(e) => update("title", e.target.value)} /><div className="grid gap-3 sm:grid-cols-2"><select value={form.category} onChange={(e) => update("category", e.target.value)} className="h-11 rounded-xl border border-input bg-background px-3 text-sm">{CATEGORIES.map((category) => <option key={category}>{category}</option>)}</select><select value={form.grade} onChange={(e) => update("grade", e.target.value as FormState["grade"])} className="h-11 rounded-xl border border-input bg-background px-3 text-sm"><option value="A">Grade A</option><option value="B">Grade B</option><option value="C">Grade C</option></select></div><div className="grid gap-3 sm:grid-cols-3"><select value={form.kind} onChange={(e) => update("kind", e.target.value as FormState["kind"])} className="h-11 rounded-xl border border-input bg-background px-3 text-sm"><option value="bale">Bale</option><option value="single">Single</option></select><Input inputMode="numeric" placeholder="Price in ₦" value={form.price} onChange={(e) => update("price", e.target.value.replace(/\D/g, ""))} /><Input inputMode="numeric" placeholder="Quantity" value={form.qty} onChange={(e) => update("qty", e.target.value.replace(/\D/g, ""))} /></div><div className="grid gap-3 sm:grid-cols-2"><select value={form.city} onChange={(e) => update("city", e.target.value)} className="h-11 rounded-xl border border-input bg-background px-3 text-sm">{CITIES.map((city) => <option key={city}>{city}</option>)}</select><Input placeholder="Approx. pieces (e.g. ~60 pcs)" value={form.pieces} onChange={(e) => update("pieces", e.target.value)} /></div><Textarea placeholder="Describe grade, condition, sizing and what buyers receive" value={form.description} onChange={(e) => update("description", e.target.value)} /><label className="flex cursor-pointer items-center gap-2 rounded-xl border border-dashed p-3 text-sm"><ImagePlus className="h-4 w-4 text-primary" />{image?.name ?? "Add a listing photo"}<input type="file" accept="image/*" className="sr-only" onChange={(e) => setImage(e.target.files?.[0] ?? null)} /></label><Button onClick={createProduct} disabled={saving}>{saving ? <><Loader2 className="animate-spin" /> Saving…</> : "Submit for review"}</Button></div>}
           <div className="mt-4 flex flex-col divide-y">{loading ? <p className="py-6 text-center text-sm text-muted-foreground"><Loader2 className="mx-auto h-4 w-4 animate-spin" /></p> : products.length === 0 ? <div className="py-6 text-center"><p className="text-sm font-semibold">No listings yet</p><p className="mt-1 text-xs text-muted-foreground">Add your first bale or single piece. It goes live after moderation (usually under 24 hours).</p></div> : products.map((product) => <div key={product.id} className="flex items-center gap-3 py-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary"><PackageCheck className="h-5 w-5" /></span><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{product.title}</p><p className="text-xs text-muted-foreground">{product.category} • Grade {product.grade} • {naira(product.price_naira)}</p></div><Badge variant={product.status === "active" ? "verified" : product.status === "rejected" ? "live" : "amber"}>{product.status}</Badge></div>)}</div>
         </Card>

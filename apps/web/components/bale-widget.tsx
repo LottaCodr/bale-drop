@@ -11,6 +11,7 @@ import { ShareButton } from "@/components/share-button";
 import { useBaleLive } from "@/hooks/use-bale-live";
 import { supabaseBrowser } from "@/lib/supabase";
 import { isSupabaseLive } from "@/lib/config";
+import { friendlyErrorMessage } from "@/lib/errors";
 import { naira, pad } from "@/lib/format";
 import { initializePayment } from "@/lib/payments";
 import { PREFS_STORAGE_KEY, usePrefsStore } from "@/lib/store/prefs-store";
@@ -122,7 +123,7 @@ export function BaleWidget({
       const { booking, error } = await claimSlot(sb, bale.id);
       if (error || !booking) {
         // RPC enforces one-slot-per-buyer / full / expired — surface it honestly.
-        setClaimError(error ?? "Could not reserve this slot");
+        setClaimError(friendlyErrorMessage(error ?? "We couldn’t reserve this slot. Please try again.", { context: "slot" }));
         setClaiming(false);
         return;
       }
@@ -131,7 +132,7 @@ export function BaleWidget({
       rememberClaim(bale.id, booking.booking_id);
       track("claim_slot", { item_id: product.id, bale_id: bale.id, value: perSlotOf(bale), slots_left: left });
     } catch (e) {
-      setClaimError(e instanceof Error ? e.message : "Claim failed");
+      setClaimError(friendlyErrorMessage(e, { context: "slot" }));
       setClaiming(false);
       return;
     }
@@ -162,7 +163,7 @@ export function BaleWidget({
     });
     if (error || !data) {
       setPaymentStarting(false);
-      setClaimError(error ?? "Could not open Paystack");
+      setClaimError(friendlyErrorMessage(error ?? "We couldn’t start payment right now. Please try again.", { context: "payment" }));
       // Definitive initialization failures cancel the slot session. Ambiguous
       // provider responses preserve it so the same attempt can be retried.
       if (!retrySameAttempt) {
@@ -182,7 +183,7 @@ export function BaleWidget({
     }
     if (!data.authorization_url) {
       setPaymentStarting(false);
-      setClaimError("Paystack did not return an authorization link.");
+      setClaimError("We couldn’t open the payment page. Please try again in a few minutes.");
       return;
     }
     window.location.assign(data.authorization_url);
