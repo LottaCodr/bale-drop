@@ -4,6 +4,7 @@ import { AnnouncementBar, BottomNav, Logo, SiteFooter, SiteHeader } from "@/comp
 import { StoreHydration, themeBootstrapScript } from "@/lib/store/hydration";
 import { cn } from "@/lib/utils";
 import { isSupabaseLive } from "@/lib/config";
+import { Analytics } from "@vercel/analytics/next";
 
 export const metadata: Metadata = {
   title: {
@@ -68,6 +69,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {children}
         </main>
         {available && <><SiteFooter /><BottomNav /></>}
+        <Analytics />
       </body>
     </html>
   );
