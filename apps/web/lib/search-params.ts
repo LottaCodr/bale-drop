@@ -22,7 +22,21 @@ function numberish(value: string | undefined): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-/** `/search?q=denim&category=Vintage&grade=A&city=Lagos&sort=price_asc` */
+/** Hard ceiling on how deep the pager goes: `(page - 1) * limit` stays sane. */
+export const MAX_PAGE = 200;
+
+/**
+ * `page` is 1-based and lives next to the filters in the URL, so a deep result
+ * set is still shareable. Anything malformed collapses to page 1 rather than
+ * throwing on a hand-edited query string.
+ */
+export function parsePage(raw: RawSearchParams): number {
+  const parsed = Number.parseInt(first(raw.page) ?? "1", 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return 1;
+  return Math.min(parsed, MAX_PAGE);
+}
+
+/** `/search?q=denim&category=Vintage&grade=A&city=Lagos&sort=price_asc&page=2` */
 export function parseSearchParams(raw: RawSearchParams): ProductFilters {
   const category = first(raw.category);
   const city = first(raw.city);
@@ -41,9 +55,10 @@ export function parseSearchParams(raw: RawSearchParams): ProductFilters {
 }
 
 /** Serialize filters back into a query string (omitting defaults). */
-export function toQueryString(filters: ProductFilters | ProductFilters & { page?: number }): string {
+export function toQueryString(filters: ProductFilters & { page?: number }): string {
   const normalized = normalizeFilters(filters);
   const params = new URLSearchParams();
+  const page = "page" in filters ? filters.page : undefined;
   if (normalized.query) params.set("q", normalized.query);
   if (normalized.category) params.set("category", normalized.category);
   if (normalized.city) params.set("city", normalized.city);
@@ -53,8 +68,14 @@ export function toQueryString(filters: ProductFilters | ProductFilters & { page?
   if (normalized.maxNaira !== undefined) params.set("max", String(normalized.maxNaira));
   if (normalized.vendorId) params.set("vendor", normalized.vendorId);
   if (normalized.sort && normalized.sort !== "newest" && normalized.sort !== "relevance") params.set("sort", normalized.sort);
+  if (page && page > 1) params.set("page", String(page));
   const query = params.toString();
   return query ? `?${query}` : "";
+}
+
+/** Pager link: same filters, different page. Page 1 drops the param entirely. */
+export function buildPageHref(current: ProductFilters, page: number): string {
+  return `/search${toQueryString({ ...normalizeFilters(current), page: Math.max(1, page) })}`;
 }
 
 /**
@@ -73,7 +94,9 @@ export function buildSearchHref(
     else if (key === "max") mapped.maxNaira = value === null || value === undefined || value === "" ? undefined : Number(value);
     else mapped[key] = value === null || value === undefined || value === "" ? undefined : value;
   }
-  return `/search${toQueryString({ ...next, ...mapped } as ProductFilters)}`;
+  // Changing a filter always returns to page 1: page 7 of "denim in Lagos"
+  // means nothing once the buyer narrows it to Grade A.
+  return `/search${toQueryString({ ...next, ...mapped } as ProductFilters & { page?: number })}`;
 }
 
 export function hasAnyFilter(filters: ProductFilters): boolean {

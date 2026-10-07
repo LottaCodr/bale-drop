@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, Check, LifeBuoy, Loader2, MessageSquare, ShieldCheck } from "lucide-react";
+import { AlertCircle, Check, LifeBuoy, Loader2, MessageSquare, RefreshCw, Send, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ServiceUnavailable } from "@/components/service-unavailable";
@@ -10,7 +10,15 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { supabaseBrowser } from "@/lib/supabase";
 import { isSupabaseLive } from "@/lib/config";
-import { TOPIC_LABELS, SUPPORT_TOPICS, sendSupportMessage, type SupportTopic } from "@/lib/support";
+import {
+  listMyThreads,
+  replyToThread,
+  sendSupportMessage,
+  SUPPORT_TOPICS,
+  TOPIC_LABELS,
+  type SupportThread,
+  type SupportTopic,
+} from "@/lib/support";
 import { friendlyErrorMessage } from "@/lib/errors";
 import { track } from "@/lib/analytics";
 
@@ -21,6 +29,9 @@ import { track } from "@/lib/analytics";
  * else (delivery failed twice, payout question, data request) lands here. The
  * copy states the response promise rather than implying instant chat, and the
  * form prefills the signed-in buyer so nobody retypes their details.
+ *
+ * Migration 0028 turned a one-shot form into a thread: the buyer can read the
+ * answer here and add to it, and answering reopens a thread they closed.
  */
 export default function SupportPage() {
   const [form, setForm] = useState({ name: "", email: "", orderRef: "", body: "" });
@@ -28,6 +39,41 @@ export default function SupportPage() {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [threads, setThreads] = useState<SupportThread[]>([]);
+  const [threadsLoading, setThreadsLoading] = useState(false);
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+  const [replyBusy, setReplyBusy] = useState<string | null>(null);
+
+  const loadThreads = useCallback(async () => {
+    if (!isSupabaseLive()) return;
+    setThreadsLoading(true);
+    try {
+      setThreads(await listMyThreads());
+    } catch {
+      // A thread list that cannot load must not break the form that still can.
+      setThreads([]);
+    } finally {
+      setThreadsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void loadThreads(); }, [loadThreads]);
+
+  async function sendReply(messageId: string) {
+    const body = (replyDrafts[messageId] ?? "").trim();
+    if (body.length < 2) { setError("Write a short reply before sending."); return; }
+    setError(null);
+    setReplyBusy(messageId);
+    try {
+      await replyToThread(messageId, body);
+      setReplyDrafts((current) => ({ ...current, [messageId]: "" }));
+      await loadThreads();
+    } catch (replyError) {
+      setError(friendlyErrorMessage(replyError, { context: "support" }));
+    } finally {
+      setReplyBusy(null);
+    }
+  }
 
   useEffect(() => {
     if (!isSupabaseLive()) return;
@@ -59,6 +105,7 @@ export default function SupportPage() {
       await sendSupportMessage({ ...form, topic });
       track("support_open", { topic });
       setDone(true);
+      void loadThreads();
     } catch (submitError) {
       setError(friendlyErrorMessage(submitError, { context: "support" }));
     } finally {
@@ -100,6 +147,73 @@ export default function SupportPage() {
         </Card>
       ) : (
         <>
+          {/* The buyer's own threads. Without this a message was fire-and-forget:
+              the answer existed in the database and nowhere the buyer could see. */}
+          {threads.length > 0 && (
+            <section className="mt-6" aria-label="Your support threads">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">Your messages</h2>
+                <Button variant="ghost" size="sm" onClick={() => void loadThreads()} disabled={threadsLoading}>
+                  {threadsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Refresh
+                </Button>
+              </div>
+              <div className="mt-3 flex flex-col gap-3">
+                {threads.map((thread) => (
+                  <Card key={thread.id} className="overflow-hidden">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/50 px-4 py-2.5">
+                      <p className="text-sm font-bold">
+                        {TOPIC_LABELS[thread.topic] ?? thread.topic}
+                        {thread.order_ref && <span className="ml-2 font-mono text-xs font-normal text-muted-foreground">{thread.order_ref}</span>}
+                      </p>
+                      <span className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(thread.created_at).toLocaleString("en-NG", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                        {thread.status === "resolved"
+                          ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200">Resolved</span>
+                          : <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">Open</span>}
+                      </span>
+                    </div>
+                    <div className="flex flex-col gap-3 p-4">
+                      <p className="whitespace-pre-line text-sm">{thread.body}</p>
+
+                      {thread.replies.length > 0 && (
+                        <ol className="flex flex-col gap-2 border-l-2 border-dashed pl-3">
+                          {thread.replies.map((reply) => (
+                            <li key={reply.id} className={reply.from_team ? "rounded-xl bg-primary/5 px-3 py-2" : "rounded-xl bg-muted/60 px-3 py-2"}>
+                              <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+                                {reply.from_team ? "Bale Drop support" : "You"} •{" "}
+                                {new Date(reply.created_at).toLocaleString("en-NG", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                              </p>
+                              <p className="mt-1 whitespace-pre-line text-sm">{reply.body}</p>
+                            </li>
+                          ))}
+                        </ol>
+                      )}
+
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <Textarea
+                          aria-label={`Reply to your message about ${TOPIC_LABELS[thread.topic] ?? thread.topic}`}
+                          className="flex-1"
+                          placeholder={thread.status === "resolved" ? "Add to this thread — it reopens if we need to answer again" : "Add more detail for our team"}
+                          value={replyDrafts[thread.id] ?? ""}
+                          onChange={(event) => setReplyDrafts((current) => ({ ...current, [thread.id]: event.target.value }))}
+                        />
+                        <Button
+                          className="sm:self-end"
+                          onClick={() => sendReply(thread.id)}
+                          disabled={replyBusy === thread.id}
+                        >
+                          {replyBusy === thread.id ? <Loader2 className="animate-spin" /> : <Send className="h-4 w-4" />} Send reply
+                        </Button>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            </section>
+          )}
+
           <div className="mt-6">
             <Card className="p-4">
               <h2 className="flex items-center gap-2 text-sm font-bold">

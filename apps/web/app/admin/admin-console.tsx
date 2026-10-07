@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Eye, Loader2, Wallet, X } from "lucide-react";
+import { Check, Eye, FileText, Loader2, Send, Wallet, X } from "lucide-react";
+import { AdminMoneyPanel } from "@/components/admin-money";
+import { AdminAuditPanel } from "@/components/admin-audit";
+import { AdminPromosPanel } from "@/components/admin-promos";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,19 +12,31 @@ import { Card } from "@/components/ui/card";
 import { friendlyErrorMessage } from "@/lib/errors";
 import { naira } from "@/lib/format";
 import { invokeOperation } from "@/lib/operations";
-import { listSupportMessages, resolveSupportMessage, TOPIC_LABELS, type SupportMessage } from "@/lib/support";
+import {
+  listRepliesFor,
+  listSupportQueue,
+  replyAsTeam,
+  resolveSupportMessage,
+  TOPIC_LABELS,
+  type SupportQueueItem,
+  type SupportReply,
+} from "@/lib/support";
+import { Textarea } from "@/components/ui/textarea";
 import { supabaseBrowser } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
 /** Admin console UI — rendered by the role-gated server page. Queues go live with auth. */
 
-type Tab = "vendors" | "products" | "disputes" | "payouts" | "support";
+type Tab = "vendors" | "products" | "disputes" | "payouts" | "promos" | "money" | "audit" | "support";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "vendors", label: "Vendor approvals" },
   { id: "products", label: "Product moderation" },
   { id: "disputes", label: "Disputes" },
   { id: "payouts", label: "Payouts" },
+  { id: "promos", label: "Promo codes" },
+  { id: "money", label: "Money" },
+  { id: "audit", label: "Audit trail" },
   { id: "support", label: "Support" },
 ];
 
@@ -37,7 +52,11 @@ export function AdminConsole() {
   const [productQueue, setProductQueue] = useState<ProductQueueItem[]>([]);
   const [disputeQueue, setDisputeQueue] = useState<DisputeQueueItem[]>([]);
   const [payoutQueue, setPayoutQueue] = useState<PayoutQueueItem[]>([]);
-  const [supportQueue, setSupportQueue] = useState<SupportMessage[]>([]);
+  const [supportQueue, setSupportQueue] = useState<SupportQueueItem[]>([]);
+  const [supportReplies, setSupportReplies] = useState<Record<string, SupportReply[]>>({});
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+  const [openThread, setOpenThread] = useState<string | null>(null);
+  const [vendorDocs, setVendorDocs] = useState<Record<string, { type: string; status: string; url: string | null }[]>>({});
   const [heldEscrow, setHeldEscrow] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
@@ -59,16 +78,88 @@ export function AdminConsole() {
       setVendorQueue((vendors.data ?? []).map((v) => ({ id: v.id, shop: v.shop_name, city: v.city ?? "Not provided", docs: "Pending review", when: new Date(v.created_at).toLocaleDateString("en-NG") })));
       setProductQueue((products.data ?? []).map((p) => ({ id: p.id, title: p.title, vendor: p.vendor_id.slice(0, 8), grade: p.grade, price: p.price_naira })));
       setDisputeQueue((disputes.data ?? []).map((d) => ({ id: d.id, order: d.order_id.slice(0, 8), issue: d.reason, evidence: d.evidence_urls?.length ?? 0, amount: 0 })));
+      // The held amount is the number a refund decision turns on, so it is read
+      // from the order rather than left as a placeholder zero.
+      void loadDisputeAmounts((disputes.data ?? []).map((d) => ({ id: d.id, order_id: d.order_id })));
       setPayoutQueue((payouts.data ?? []).map((p) => ({ id: p.id, vendor: p.vendor_id.slice(0, 8), gross: p.gross_naira, commission: p.commission_naira, eta: p.status === "failed" ? "Retry" : p.status === "processing" ? "Verify" : "Queued", status: p.status })));
       setHeldEscrow((escrow.data ?? []).reduce((sum, row) => sum + Number(row.total_naira), 0));
       setLoading(false);
     });
     // Support is a separate read: it must not fail the money queues if the
     // migration has not been applied yet.
-    listSupportMessages()
-      .then(setSupportQueue)
+    listSupportQueue()
+      .then(async (queue) => {
+        setSupportQueue(queue);
+        try {
+          const replies = await listRepliesFor(queue.map((item) => item.id));
+          const grouped: Record<string, SupportReply[]> = {};
+          for (const reply of replies) {
+            const bucket = grouped[reply.message_id] ?? [];
+            bucket.push(reply);
+            grouped[reply.message_id] = bucket;
+          }
+          setSupportReplies(grouped);
+        } catch {
+          setSupportReplies({});
+        }
+      })
       .catch(() => setSupportQueue([]));
   }, [refreshToken]);
+
+  /**
+   * Vendor KYC documents. The bucket is private and its Storage policies are
+   * owner-only, so this goes through `vendor-documents`, which checks the admin
+   * role and returns URLs that expire in five minutes. Approving a seller
+   * without ever seeing their ID was the whole point of the gap.
+   */
+  async function viewVendorDocs(vendorId: string) {
+    setError(null); setActionBusy(`docs-${vendorId}`);
+    const { data, error: actionError } = await invokeOperation<{
+      documents?: { type: string; status: string; url: string | null }[];
+    }>("vendor-documents", { vendor_id: vendorId }, { context: "admin" });
+    setActionBusy(null);
+    if (actionError) { setError(actionError); return; }
+    setVendorDocs((current) => ({ ...current, [vendorId]: data?.documents ?? [] }));
+  }
+
+  /** Reply in the thread (and optionally resolve it in the same action). */
+  async function sendTeamReply(messageId: string, resolve: boolean) {
+    const body = (replyDrafts[messageId] ?? "").trim();
+    if (body.length < 2) { setError("Write the reply before sending it."); return; }
+    setError(null); setActionBusy(`reply-${messageId}`);
+    try {
+      await replyAsTeam(messageId, body, resolve);
+      setReplyDrafts((current) => ({ ...current, [messageId]: "" }));
+      setRefreshToken((value) => value + 1);
+    } catch (replyError) {
+      setError(friendlyErrorMessage(replyError, { context: "admin", fallback: "We couldn’t send that reply. Please try again." }));
+    } finally {
+      setActionBusy(null);
+    }
+  }
+
+  /**
+   * Fill in the money a dispute is holding. `disputes` has no amount column —
+   * the held value is the order's total — so this is a second read keyed on the
+   * order ids the queue already returned.
+   */
+  async function loadDisputeAmounts(rows: { id: string; order_id: string }[]) {
+    if (rows.length === 0) return;
+    const orderIds = [...new Set(rows.map((row) => row.order_id))];
+    const { data } = await supabaseBrowser()
+      .from("orders")
+      .select("id, total_naira, escrow_status")
+      .in("id", orderIds);
+    if (!data) return;
+    const byOrder = new Map(data.map((order) => [order.id, order]));
+    setDisputeQueue((current) =>
+      current.map((dispute) => {
+        const match = rows.find((row) => row.id === dispute.id);
+        const order = match ? byOrder.get(match.order_id) : undefined;
+        return order ? { ...dispute, amount: Number(order.total_naira) } : dispute;
+      })
+    );
+  }
 
   async function viewEvidence(id: string) {
     setError(null); setActionBusy(`evidence-${id}`);
@@ -122,7 +213,11 @@ export function AdminConsole() {
             ? disputeQueue.length
             : item.id === "payouts"
               ? payoutQueue.length
-              : supportQueue.filter((message) => message.status === "open").length,
+              : item.id === "money" || item.id === "audit" || item.id === "promos"
+                ? // These panels load their own data; a badge count would be a
+                  // second read of the same tables for one number.
+                  null
+                : supportQueue.filter((message) => message.status === "open").length,
   }));
 
   return (
@@ -165,9 +260,11 @@ export function AdminConsole() {
             )}
           >
             {t.label}
-            <span className={cn("rounded-full px-1.5 text-xs font-bold", tab === t.id ? "bg-white/20" : "bg-muted")}>
-              {t.count}
-            </span>
+            {t.count != null && (
+              <span className={cn("rounded-full px-1.5 text-xs font-bold", tab === t.id ? "bg-white/20" : "bg-muted")}>
+                {t.count}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -186,9 +283,33 @@ export function AdminConsole() {
                   <Badge variant={decided[v.id] === "Approved" ? "verified" : "live"}>{decided[v.id]}</Badge>
                 ) : (
                   <div className="flex flex-wrap gap-2">
-                    <Button variant="outline" size="sm"><Eye /> Docs</Button>
+                    <Button variant="outline" size="sm" onClick={() => viewVendorDocs(v.id)} disabled={actionBusy === `docs-${v.id}`}>
+                      {actionBusy === `docs-${v.id}` ? <Loader2 className="animate-spin" /> : <FileText className="h-4 w-4" />} Docs
+                    </Button>
                     <Button size="sm" onClick={() => decide(v.id, "Approved")} disabled={actionBusy === v.id}>{actionBusy === v.id ? <Loader2 className="animate-spin" /> : <Check />} Approve</Button>
                     <Button variant="destructive" size="sm" onClick={() => decide(v.id, "Rejected")} disabled={actionBusy === v.id}><X /> Reject</Button>
+                    {vendorDocs[v.id] && (
+                      <div className="basis-full rounded-xl border bg-muted/40 p-3">
+                        {vendorDocs[v.id].length === 0 ? (
+                          <p className="text-xs text-muted-foreground">
+                            No documents uploaded for this application. You can still approve, but say why in the
+                            rejection note if you don&apos;t.
+                          </p>
+                        ) : (
+                          <ul className="flex flex-col gap-1.5">
+                            {vendorDocs[v.id].map((doc, index) => (
+                              <li key={`${doc.type}-${index}`} className="flex items-center gap-2 text-xs">
+                                <Badge variant={doc.status === "approved" ? "verified" : doc.status === "rejected" ? "live" : "amber"}>{doc.status}</Badge>
+                                <span className="font-semibold capitalize">{doc.type.replaceAll("_", " ")}</span>
+                                {doc.url
+                                  ? <a className="font-semibold text-primary hover:underline" href={doc.url} target="_blank" rel="noreferrer">Open (link expires in 5 min)</a>
+                                  : <span className="text-muted-foreground">preview unavailable</span>}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </li>
@@ -266,6 +387,10 @@ export function AdminConsole() {
             ))}
           </ul>
         )}
+        {tab === "promos" && <AdminPromosPanel />}
+        {tab === "money" && <AdminMoneyPanel />}
+        {tab === "audit" && <AdminAuditPanel />}
+
         {tab === "support" && (
           <ul className="divide-y">
             {loading ? (
@@ -275,39 +400,104 @@ export function AdminConsole() {
                 No support messages yet. Buyers reach this queue from the footer and from order pages.
               </li>
             ) : (
-              supportQueue.map((message) => (
-                <li key={message.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start">
-                  <div className="min-w-0 flex-1">
-                    <p className="font-bold">
-                      {message.name}{" "}
-                      <span className="font-mono text-xs font-normal text-muted-foreground">{message.id.slice(0, 8)}</span>
-                    </p>
-                    <p className="text-[13px] text-muted-foreground">
-                      {TOPIC_LABELS[message.topic]} • {message.email}
-                      {message.order_ref ? ` • ${message.order_ref}` : ""} •{" "}
-                      {new Date(message.created_at).toLocaleString("en-NG")}
-                    </p>
-                    <p className="mt-2 whitespace-pre-line text-sm">{message.body}</p>
-                    <a
-                      href={`mailto:${message.email}?subject=${encodeURIComponent(`Re: your Bale Drop message${message.order_ref ? ` (${message.order_ref})` : ""}`)}`}
-                      className="mt-2 inline-block text-xs font-semibold text-primary hover:underline"
-                    >
-                      Reply by email
-                    </a>
-                  </div>
-                  {message.status === "resolved" ? (
-                    <Badge variant="verified">Resolved</Badge>
-                  ) : (
-                    <Button
-                      size="sm"
-                      onClick={() => resolveMessage(message.id)}
-                      disabled={actionBusy === `support-${message.id}`}
-                    >
-                      {actionBusy === `support-${message.id}` ? <Loader2 className="animate-spin" /> : <Check />} Mark resolved
-                    </Button>
-                  )}
-                </li>
-              ))
+              supportQueue.map((message) => {
+                const replies = supportReplies[message.id] ?? [];
+                const expanded = openThread === message.id;
+                const firstResponse = message.first_response_seconds == null
+                  ? null
+                  : Math.round(message.first_response_seconds / 60);
+                return (
+                  <li key={message.id} className="flex flex-col gap-3 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-bold">
+                          {message.name}{" "}
+                          <span className="font-mono text-xs font-normal text-muted-foreground">{message.id.slice(0, 8)}</span>
+                        </p>
+                        <p className="text-[13px] text-muted-foreground">
+                          {TOPIC_LABELS[message.topic]} • {message.email}
+                          {message.order_ref ? ` • ${message.order_ref}` : ""} •{" "}
+                          {new Date(message.created_at).toLocaleString("en-NG")}
+                        </p>
+                        {/* The two numbers that decide whether support is working. */}
+                        <p className="mt-1 flex flex-wrap gap-x-3 text-[11px] text-muted-foreground">
+                          <span>Waiting {Math.max(0, Math.round(message.age_seconds / 3600))} h</span>
+                          <span>{replies.length} repl{replies.length === 1 ? "y" : "ies"} ({message.team_reply_count} from us)</span>
+                          {firstResponse != null && <span>First answer after {firstResponse} min</span>}
+                          {message.status === "open" && firstResponse == null && message.age_seconds > 12 * 3600 && (
+                            <span className="font-bold text-red-600 dark:text-red-400">Unanswered over 12 h</span>
+                          )}
+                        </p>
+                        <p className="mt-2 whitespace-pre-line text-sm">{message.body}</p>
+                        <div className="mt-2 flex flex-wrap items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setOpenThread(expanded ? null : message.id)}
+                            className="text-xs font-semibold text-primary hover:underline"
+                          >
+                            {expanded ? "Hide thread" : `Open thread (${replies.length})`}
+                          </button>
+                          <a
+                            href={`mailto:${message.email}?subject=${encodeURIComponent(`Re: your Bale Drop message${message.order_ref ? ` (${message.order_ref})` : ""}`)}`}
+                            className="text-xs font-semibold text-muted-foreground hover:underline"
+                          >
+                            Reply by email instead
+                          </a>
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 flex-wrap gap-2">
+                        {message.status === "resolved" ? (
+                          <Badge variant="verified">Resolved</Badge>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => resolveMessage(message.id)}
+                            disabled={actionBusy === `support-${message.id}`}
+                          >
+                            {actionBusy === `support-${message.id}` ? <Loader2 className="animate-spin" /> : <Check />} Mark resolved
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+
+                    {expanded && (
+                      <div className="rounded-xl border bg-muted/30 p-3">
+                        {replies.length === 0 ? (
+                          <p className="text-xs text-muted-foreground">No replies yet — this buyer is still waiting.</p>
+                        ) : (
+                          <ol className="flex flex-col gap-2">
+                            {replies.map((reply) => (
+                              <li key={reply.id} className={reply.from_team ? "rounded-lg bg-primary/5 px-3 py-2" : "rounded-lg bg-background px-3 py-2"}>
+                                <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+                                  {reply.from_team ? "Team" : message.name} •{" "}
+                                  {new Date(reply.created_at).toLocaleString("en-NG", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                                </p>
+                                <p className="mt-1 whitespace-pre-line text-sm">{reply.body}</p>
+                              </li>
+                            ))}
+                          </ol>
+                        )}
+                        <Textarea
+                          className="mt-3"
+                          aria-label={`Reply to ${message.name}`}
+                          placeholder="Write the reply that gets stored here and emailed to the buyer"
+                          value={replyDrafts[message.id] ?? ""}
+                          onChange={(event) => setReplyDrafts((current) => ({ ...current, [message.id]: event.target.value }))}
+                        />
+                        <div className="mt-2 flex flex-wrap justify-end gap-2">
+                          <Button size="sm" variant="outline" disabled={actionBusy === `reply-${message.id}`} onClick={() => sendTeamReply(message.id, false)}>
+                            {actionBusy === `reply-${message.id}` ? <Loader2 className="animate-spin" /> : <Send className="h-4 w-4" />} Send reply
+                          </Button>
+                          <Button size="sm" disabled={actionBusy === `reply-${message.id}`} onClick={() => sendTeamReply(message.id, true)}>
+                            <Check className="h-4 w-4" /> Reply &amp; resolve
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </li>
+                );
+              })
             )}
           </ul>
         )}

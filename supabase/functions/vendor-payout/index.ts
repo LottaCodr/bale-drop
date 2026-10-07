@@ -1,4 +1,11 @@
-/** Admin-triggered Paystack transfer with idempotent references and reconciliation. */
+/**
+ * Admin-triggered Paystack transfer with idempotent references and
+ * reconciliation.
+ *
+ * Money leaves the platform balance here, so every terminal outcome is logged
+ * and the vendor is told out-of-app: a seller waiting on ₦93,000 should not have
+ * to refresh a dashboard to learn it landed (or did not).
+ */
 import {
   adminClient,
   authenticatedUser,
@@ -6,6 +13,9 @@ import {
   json,
   profile,
 } from "../_shared/auth.ts";
+import { enforceRateLimit } from "../_shared/rate-limit.ts";
+import { alert, logError, logInfo } from "../_shared/monitor.ts";
+import { deliver, naira } from "../_shared/notify.ts";
 
 const PAYSTACK_SECRET = Deno.env.get("PAYSTACK_SECRET_KEY");
 
@@ -75,6 +85,11 @@ Deno.serve(async (req: Request) => {
     return json(req, { error: "admin access required" }, 403);
   }
 
+  const limited = await enforceRateLimit(
+    req, db, "vendor-payout", user.id, 60, 60, cors(req),
+  );
+  if (limited) return limited;
+
   let payoutId: string | undefined;
   let payoutAttempts = 0;
   let ownsAttempt = false;
@@ -126,6 +141,24 @@ Deno.serve(async (req: Request) => {
         p_status: "failed",
         p_transfer_code: null,
         p_error: "vendor bank details are incomplete",
+      });
+      if (vendor?.profile_id) {
+        await deliver(db, { profileId: vendor.profile_id }, {
+          title: "Payout on hold — add your bank details",
+          body: "We tried to send your payout but your bank name and account number are missing or incomplete. Add them in your seller workspace and we will retry automatically.",
+          href: "/vendor",
+          email: {
+            subject: "Bale Drop — your payout is on hold",
+            details: [["Amount owed", naira(payout.net_naira)]],
+            ctaLabel: "Add bank details",
+          },
+          sms: "Bale Drop: your payout is on hold because your bank details are incomplete. Add them in your seller workspace.",
+        });
+      }
+      await alert("vendor-payout", "a payout could not start: bank details missing", {
+        payout_id: payout.id,
+        vendor_id: payout.vendor_id,
+        amount_naira: payout.net_naira,
       });
       return json(req, { error: "vendor bank details are incomplete" }, 409);
     }
@@ -275,6 +308,28 @@ Deno.serve(async (req: Request) => {
         p_transfer_code: null,
         p_error: message,
       });
+      logError("vendor-payout", new Error(message), {
+        scope: "transfer",
+        payout_id: payout.id,
+      });
+      await alert("vendor-payout", "a vendor transfer was rejected", {
+        payout_id: payout.id,
+        vendor_id: payout.vendor_id,
+        amount_naira: payout.net_naira,
+        reason: message,
+      });
+      if (vendor?.profile_id) {
+        await deliver(db, { profileId: vendor.profile_id }, {
+          title: "Payout delayed",
+          body: `We could not complete your ${naira(payout.net_naira)} transfer yet. Your money is safe and our team is retrying it.`,
+          href: "/vendor",
+          email: {
+            subject: `Bale Drop — your ${naira(payout.net_naira)} payout is delayed`,
+            details: [["Amount", naira(payout.net_naira)], ["Reference", transferReference]],
+            ctaLabel: "View payouts",
+          },
+        });
+      }
       return json(req, {
         error: message,
         payout_id: payout.id,
@@ -310,6 +365,32 @@ Deno.serve(async (req: Request) => {
         retry: true,
       }, 202);
     }
+    logInfo("vendor-payout", "transfer settled", {
+      payout_id: payout.id,
+      status: nextStatus,
+      amount_naira: payout.net_naira,
+    });
+    if (nextStatus === "paid" && vendor?.profile_id) {
+      // `complete_vendor_payout` writes the in-app row; this is the email/SMS
+      // copy a seller can keep as their statement.
+      await deliver(db, { profileId: vendor.profile_id }, {
+        title: "Payout sent",
+        body: `${naira(payout.net_naira)} has been sent to your bank account. Transfers usually land within a few minutes on business days.`,
+        href: "/vendor",
+        email: {
+          subject: `Bale Drop payout — ${naira(payout.net_naira)} sent`,
+          preheader: "Gross less commission. Keep this as your statement.",
+          details: [
+            ["Gross", naira(payout.gross_naira)],
+            ["Commission", `−${naira(payout.commission_naira)}`],
+            ["Net sent", naira(payout.net_naira)],
+            ["Transfer reference", transferReference],
+          ],
+          ctaLabel: "View payouts",
+        },
+        sms: `Bale Drop: ${naira(payout.net_naira)} has been sent to your bank account.`,
+      });
+    }
     return json(req, {
       ok: true,
       payout_id: payout.id,
@@ -329,7 +410,12 @@ Deno.serve(async (req: Request) => {
         p_error: message,
       });
     }
-    console.error("vendor-payout:", error);
+    logError("vendor-payout", error, { payout_id: payoutId ?? null });
+    await alert("vendor-payout", "a payout attempt failed", {
+      payout_id: payoutId ?? null,
+      attempts: payoutAttempts,
+      reason: message,
+    });
     return json(req, {
       error: message,
       payout_id: payoutId ?? null,

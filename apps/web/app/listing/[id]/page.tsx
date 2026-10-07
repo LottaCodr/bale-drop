@@ -22,11 +22,13 @@ import {
   VerifiedMark,
 } from "@/components/commerce";
 import { FavoriteButton } from "@/components/favorite-button";
+import { ServiceUnavailable } from "@/components/service-unavailable";
+import { isSupabaseLive } from "@/lib/config";
 import { naira } from "@/lib/format";
 import { getListingData, getProductReviews } from "@/lib/data";
 import { slotPrice } from "@bale-drop/database";
 
-/** Listing detail — live Supabase data with mock fallback. Always fresh (no stale splits). */
+/** Listing detail — live Supabase data only. Always fresh (no stale splits). */
 export const dynamic = "force-dynamic";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
@@ -47,6 +49,13 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 export default async function ListingPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  // Two different failures need two different pages: an unconfigured store is
+  // "temporarily unavailable" (503-shaped), a configured store with no such
+  // listing is a genuine 404. Collapsing them told buyers a real product did
+  // not exist whenever the env vars were missing.
+  if (!isSupabaseLive()) {
+    return <ServiceUnavailable title="This listing is temporarily unavailable" description="Our store connection is down. Please try again in a moment." />;
+  }
   const data = await getListingData(id);
   if (!data) notFound();
   const { product, vendor, bale, related } = data;
@@ -74,10 +83,18 @@ export default async function ListingPage({ params }: { params: Promise<{ id: st
       </nav>
 
       <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
-        {/* Product illustration — no photo gallery until real images are wired up */}
+        {/* Seller photo when one was uploaded; generated art otherwise */}
         <div>
-          <div className="relative overflow-hidden rounded-2xl border">
-            <ProductArt hue={product.hue} category={product.category} className="aspect-[4/3] w-full" iconClassName="h-28 w-28" />
+          <div className="relative overflow-hidden rounded-2xl border bg-muted">
+            <ProductArt
+              hue={product.hue}
+              category={product.category}
+              className="aspect-[4/3] w-full"
+              iconClassName="h-28 w-28"
+              src={product.imageUrl}
+              alt={product.imageUrl ? product.title : undefined}
+              priority
+            />
             <div className="absolute left-3 top-3 flex gap-1.5">
               <GradeBadge grade={product.grade} />
               {product.tag && <Badge variant="amber">{product.tag}</Badge>}
@@ -86,7 +103,9 @@ export default async function ListingPage({ params }: { params: Promise<{ id: st
             <FavoriteButton product={product} vendor={vendor} className="absolute right-3 top-3" />
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
-            Illustration only. This is not a photo of the item.
+            {product.imageUrl
+              ? "Photo uploaded by the seller. Grade and contents are verified before dispatch."
+              : "Illustration only — this seller has not uploaded a photo yet. Ask a question below before buying."}
           </p>
 
           {/* Details (desktop: under gallery) */}

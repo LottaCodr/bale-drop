@@ -1,4 +1,10 @@
-/** Return short-lived private evidence links to an authenticated admin. */
+/**
+ * Return short-lived private evidence links to an authenticated admin.
+ *
+ * Signed URLs to buyer-uploaded photos are sensitive, so the endpoint is rate
+ * limited and every issuance is logged with the actor — an admin account that
+ * starts pulling evidence in bulk should be visible in the audit trail.
+ */
 import {
   adminClient,
   authenticatedUser,
@@ -6,6 +12,8 @@ import {
   json,
   profile,
 } from "../_shared/auth.ts";
+import { enforceRateLimit } from "../_shared/rate-limit.ts";
+import { logError, logInfo } from "../_shared/monitor.ts";
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -21,6 +29,12 @@ Deno.serve(async (req: Request) => {
   if (actor?.role !== "admin") {
     return json(req, { error: "admin access required" }, 403);
   }
+
+  const limited = await enforceRateLimit(
+    req, db, "dispute-evidence", user.id, 60, 60, cors(req),
+  );
+  if (limited) return limited;
+
   try {
     const body = await req.json() as { dispute_id?: string };
     if (!body.dispute_id) {
@@ -36,9 +50,13 @@ Deno.serve(async (req: Request) => {
         .createSignedUrl(path, 600);
       if (!error && data?.signedUrl) links.push(data.signedUrl);
     }
+    logInfo("dispute-evidence", "signed URLs issued", {
+      dispute_id: body.dispute_id,
+      links: links.length,
+    });
     return json(req, { ok: true, links });
   } catch (error) {
-    console.error("dispute-evidence:", error);
+    logError("dispute-evidence", error);
     return json(req, {
       error: error instanceof Error ? error.message : "Could not load evidence",
     }, 400);

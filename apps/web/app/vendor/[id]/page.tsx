@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Stars } from "@/components/ui/stars";
 import { BaleSplitCard, ProductCard, SectionHeader, VerifiedMark } from "@/components/commerce";
+import { ServiceUnavailable } from "@/components/service-unavailable";
+import { isSupabaseLive } from "@/lib/config";
 import { getVendorStorefront } from "@/lib/data";
 import { naira } from "@/lib/format";
 
@@ -33,6 +35,11 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 export default async function VendorStorefrontPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  // Same 404-vs-503 split as the listing page: a missing env config is our
+  // outage, not evidence that the shop does not exist.
+  if (!isSupabaseLive()) {
+    return <ServiceUnavailable title="This shop is temporarily unavailable" description="Our store connection is down. Please try again in a moment." />;
+  }
   const store = await getVendorStorefront(id);
   if (!store) notFound();
   const { vendor, products, splits, reviews } = store;

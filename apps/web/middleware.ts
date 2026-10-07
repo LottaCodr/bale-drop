@@ -11,12 +11,24 @@ import { isSupabaseLive } from "@/lib/config";
  *    happen server-side in the page, where we can read profiles);
  *  - signed-in users are sent away from /login and /signup to where they
  *    were heading, so the back button never shows a stale sign-in form.
+ *
+ * `/vendor` is deliberately split in two:
+ *   - `/vendor`        → the seller workspace. Requires a session.
+ *   - `/vendor/<id>`   → the *public* storefront a product card links to.
+ * Treating the second as protected sent every anonymous shopper to
+ * `/login?next=/vendor/...`, so a discovered shop could never be browsed.
  */
-const PROTECTED = ["/checkout", "/orders", "/admin", "/vendor", "/notifications", "/account", "/welcome"];
+const PROTECTED = ["/checkout", "/orders", "/admin", "/notifications", "/account", "/welcome"];
+/** Guarded by exact path only — their sub-paths are public. */
+const PROTECTED_EXACT = ["/vendor"];
 const GUEST_ONLY = ["/login", "/signup"];
 
 function matches(pathname: string, routes: string[]): boolean {
   return routes.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
+function isProtected(pathname: string): boolean {
+  return matches(pathname, PROTECTED) || PROTECTED_EXACT.includes(pathname);
 }
 
 export async function middleware(request: NextRequest) {
@@ -51,7 +63,7 @@ export async function middleware(request: NextRequest) {
     return redirect;
   };
 
-  if (!user && matches(pathname, PROTECTED)) {
+  if (!user && isProtected(pathname)) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
     loginUrl.search = "";

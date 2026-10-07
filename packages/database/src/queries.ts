@@ -5,7 +5,14 @@
  */
 import type { DbClient } from "./types";
 import { hueFor, type BaleRow, type ProductRow, type VendorRow } from "./domain";
-import { escapeLikePattern, normalizeFilters, sanitizeRemoteQuery, type ProductFilters } from "./search";
+import {
+  escapeLikePattern,
+  normalizeFilters,
+  PRODUCT_SORTS,
+  sanitizeRemoteQuery,
+  type ProductFilters,
+  type ProductSort,
+} from "./search";
 
 export interface PaidBookingLabel {
   bale_id: string;
@@ -107,14 +114,12 @@ export async function claimSlot(
  * ========================================================================== */
 
 /**
- * Live catalog search. Mirrors `filterProducts()` in ./search.ts filter-for-
- * filter so demo mode and live mode agree; the difference is only *where* the
- * filtering happens (Postgres vs the browser).
- */
-/**
- * Apply the filter half of a search to a `products` select. Ordering, paging
- * and the exact count ride along on the same query, so the "N results" badge
- * can never disagree with the page it labels.
+ * Apply the filter half of a search to a `products` select.
+ *
+ * This is the *fallback* path. Ranking, synonyms and paging live in
+ * `search_products()` (migration 0026); PostgREST can only do the flat filter,
+ * so it is used when that function is missing (an unmigrated database) and
+ * nowhere else.
  */
 function filteredProducts(client: DbClient, filters: ProductFilters) {
   let query = client.from("products").select("*", { count: "exact" }).eq("status", "active");
@@ -143,13 +148,86 @@ export interface ProductPage {
   rows: ProductRow[];
   /** Total matching listings ignoring `limit` — for "N results", not the page size. */
   total: number;
+  /** Rows skipped before this page. */
+  offset: number;
+  /** `ceil(total / limit)` — the pager needs this, and it must agree with `total`. */
+  pages: number;
+  /** The sort the database actually applied (it defaults to relevance for a query). */
+  sort: ProductSort;
 }
 
+/** Shape returned by `search_products()` (migration 0026). */
+interface SearchRpcResult {
+  rows?: ProductRow[];
+  total?: number;
+  limit?: number;
+  offset?: number;
+  sort?: string;
+  pages?: number;
+}
+
+/**
+ * Live catalog search: one RPC, ranked in Postgres.
+ *
+ * `search_products()` owns relevance (tsvector rank + exact-substring bonus +
+ * `search_synonyms` category boost + a small popularity nudge), the sort keys,
+ * the paging and the exact total. Keeping all of that server-side is what makes
+ * "N results" agree with the page it labels, and it means a buyer's punctuation
+ * is sanitized by the same code path that runs the query.
+ *
+ * `filterProducts()` in ./search.ts remains the demo-mode equivalent, and the
+ * unit tests are what stop the two from drifting apart.
+ */
 export async function searchProducts(
   client: DbClient,
   rawFilters: ProductFilters = {}
 ): Promise<ProductPage> {
   const filters = normalizeFilters(rawFilters);
+  const limit = filters.limit ?? 40;
+  const offset = Math.max(0, Math.round(filters.offset ?? 0));
+
+  const { data, error } = await client.rpc("search_products", {
+    p_query: filters.query ?? null,
+    p_category: filters.category ?? null,
+    p_city: filters.city ?? null,
+    p_grade: filters.grade ?? null,
+    p_kind: filters.kind ?? null,
+    p_vendor_id: filters.vendorId ?? null,
+    p_min_naira: filters.minNaira ?? null,
+    p_max_naira: filters.maxNaira ?? null,
+    p_sort: filters.sort ?? null,
+    p_limit: limit,
+    p_offset: offset,
+  });
+
+  // 42883 = undefined_function. An unmigrated database still gets results
+  // (unranked) instead of an empty catalog; anything else is a real failure.
+  if (error && error.code !== "42883") throw error;
+  if (!error) {
+    const result = (data ?? {}) as SearchRpcResult;
+    const rows = Array.isArray(result.rows) ? result.rows : [];
+    const total = Number(result.total ?? rows.length);
+    const appliedLimit = Number(result.limit ?? limit) || limit;
+    return {
+      rows,
+      total,
+      offset: Number(result.offset ?? offset),
+      pages: Number(result.pages ?? Math.max(1, Math.ceil(total / appliedLimit))),
+      sort: (PRODUCT_SORTS as readonly string[]).includes(result.sort ?? "")
+        ? (result.sort as ProductSort)
+        : (filters.sort ?? "newest"),
+    };
+  }
+
+  return searchProductsFallback(client, filters, limit, offset);
+}
+
+async function searchProductsFallback(
+  client: DbClient,
+  filters: ProductFilters,
+  limit: number,
+  offset: number
+): Promise<ProductPage> {
   let query = filteredProducts(client, filters);
 
   switch (filters.sort) {
@@ -163,8 +241,8 @@ export async function searchProducts(
       query = query.order("rating_avg", { ascending: false }).order("sold_count", { ascending: false });
       break;
     case "relevance":
-      // Postgres can't rank our relevance score without a full-text index;
-      // popularity is the honest proxy until search graduates to `tsvector`.
+      // Without the tsvector rank there is no honest relevance order;
+      // popularity is the least-wrong proxy.
       query = query.order("sold_count", { ascending: false });
       break;
     case "newest":
@@ -173,9 +251,45 @@ export async function searchProducts(
       break;
   }
 
-  const { data, error, count } = await query.limit(filters.limit ?? 40);
+  const { data, error, count } = await query.range(offset, offset + limit - 1);
   if (error) throw error;
-  return { rows: data, total: count ?? data.length };
+  const rows = data ?? [];
+  const total = count ?? rows.length;
+  return {
+    rows,
+    total,
+    offset,
+    pages: Math.max(1, Math.ceil(total / limit)),
+    sort: filters.sort ?? "newest",
+  };
+}
+
+/**
+ * Seller photos for a set of listings, one query.
+ *
+ * `product_images` rows are written when a listing is created, and the bucket is
+ * public-read, so the caller turns each `storage_path` into a URL with
+ * `publicProductImageUrl()`. Returns a map keyed by product id, lowest
+ * `sort_order` first — the first entry is the card image.
+ */
+export async function listProductImages(
+  client: DbClient,
+  productIds: string[]
+): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  if (productIds.length === 0) return out;
+  const { data, error } = await client
+    .from("product_images")
+    .select("product_id, storage_path, sort_order")
+    .in("product_id", productIds)
+    .order("sort_order", { ascending: true });
+  if (error) throw error;
+  for (const row of (data ?? []) as { product_id: string; storage_path: string }[]) {
+    const bucket = out.get(row.product_id) ?? [];
+    bucket.push(row.storage_path);
+    out.set(row.product_id, bucket);
+  }
+  return out;
 }
 
 export async function getVendorById(client: DbClient, id: string): Promise<VendorRow | null> {

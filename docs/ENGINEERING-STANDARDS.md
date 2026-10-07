@@ -26,8 +26,9 @@
 
 - Import Supabase ONLY from `@bale-drop/database` (`@/lib/supabase` in web).
   Never instantiate clients ad-hoc.
-- Demo data behind `lib/mock.ts` selectors (`getProduct`, …) so swapping to
-  live queries touches one file.
+- All catalog reads go through `lib/data.ts` (server, React-`cache()`d) and
+  `@bale-drop/database` queries. There is no demo dataset: an unconfigured or
+  failing store renders `<ServiceUnavailable>`, never invented inventory.
 - Realtime for live state (slot counters, order timeline). No polling loops.
 - After `supabase gen types`, UI imports Row types from the shared package —
   never redefines DB shapes.
@@ -46,10 +47,20 @@
    in Edge Functions with persisted provider references, verification-before-
    retry, webhook reconciliation and status tracking.
 6. RLS: money tables are read-own-only; no client insert/update/delete.
+7. RLS is a *row* gate, not a column gate. Supabase grants
+   `SELECT/INSERT/UPDATE/DELETE` on every `public` table to `anon` and
+   `authenticated` by default, and a table-level `UPDATE` silently overrides any
+   `REVOKE UPDATE (column)`. To protect a server-managed column you must revoke
+   the table-level privilege first, then grant back only the columns the client
+   writes (migration `0031`). `guard_protected_columns()` triggers back this up
+   so a bulk re-grant cannot reopen the hole.
 
 ## 5. Security checklist (pre-launch gate)
 
 - [ ] RLS enabled on every table; anon has zero write to money tables
+- [ ] `python3 scripts/check-migrations.py` green — migrations apply and both
+      scenarios pass, including `supabase/tests/rls_audit.sql` (privilege
+      escalation, row isolation, and every legitimate client write)
 - [ ] `vendor-documents` and `dispute-evidence` buckets private; signed URLs only
 - [ ] Double-submit, webhook replay, payout timeout and refund webhook tests pass
 - [ ] Webhook signature enforced; cron secret set; rate limits on

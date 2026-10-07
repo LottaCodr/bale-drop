@@ -139,10 +139,21 @@ button, server-side totals via `reconcileCart()` (price/stock changes surface as
 amber "this changed" notices rather than silent repricing), idempotency key held
 across retries, success only from the `payment_sessions` Realtime event.
 
-Edge Functions (12 + `_shared/auth.ts`): `paystack-initialize`,
-`paystack-webhook`, `bale-expiry`, `order-action`, `logistics-create`,
-`logistics-webhook`, `vendor-onboard`, `vendor-payout`, `payout-reconcile`,
-`admin-action`, `dispute-evidence`, `review-create`. Migrations `0001–0019`.
+Edge Functions (18 + `_shared/{auth,monitor,rate-limit,notify}.ts`):
+`paystack-initialize`, `paystack-webhook`, `bale-expiry`, `escrow-release`,
+`order-action`, `split-action`, `logistics-create`, `logistics-webhook`,
+`vendor-onboard`, `vendor-documents`, `vendor-payout`, `payout-reconcile`,
+`admin-action`, `dispute-evidence`, `review-create`, `support-reply`,
+`push-send`. Migrations `0001–0032`.
+
+Every one of them is rate-limited (`check_rate_limit`, migration `0027`),
+reports failures through `_shared/monitor.ts`, and sends buyer/seller email +
+SMS through `_shared/notify.ts` where the event warrants it. Splits have a real
+lifecycle: a vendor creates one with `create_bale_split`, buyers claim slots,
+`fulfil_bale_split` settles the whole bale in one transaction when it fills, and
+`bale-expiry` refunds everyone when it does not. Escrow releases itself 48 h
+after delivery (`release_due_escrows`, cron `escrow-release`) unless a dispute
+is open.
 
 Orders: 5-step timeline, tracking chip, explicit "Confirm delivery (releases
 escrow)" vs "Open dispute" with photo/PDF evidence, "Buy again" re-prices live
@@ -166,12 +177,19 @@ products, reviews after delivery.
   enforces them) and `/support`, which writes to `support_messages`
   (migration `0020`, guest-insertable, author/admin read) and appears as a
   queue in the admin console. Both are linked from every footer.
-- PWA: `manifest.ts`, generated maskable icons (`npm run icons`),
-  offline-safe art, installable.
-- Quality gates: `npm run check` (typecheck + lint + 53 unit tests over the cart
-  maths, store sanitisation, search contract, URL state, formatting), `/api/health`
-  reporting demo vs live, and `instrumentation.ts` which **logs a launch blocker
-  in production** if Supabase env vars are missing.
+- PWA: `manifest.ts`, generated maskable icons (`npm run icons`), installable,
+  and web push: `public/sw.js` + `lib/push.ts` register a VAPID subscription
+  into `push_subscriptions` (migration `0029`), the toggle lives on
+  `/notifications`, and `push-send` fans a new `notifications` row out to every
+  endpoint via a Supabase Database Webhook.
+- Quality gates: `npm run check` (typecheck + lint + 94 unit tests over the cart
+  maths, store sanitisation, search contract, URL state, formatting, photo URLs
+  and escrow countdown copy + the Edge Function syntax gate), `.github/workflows/ci.yml`
+  running the same gates plus `scripts/check-migrations.py` and
+  `supabase/tests/money_path.sql` (22 assertions over the split → settlement →
+  payout → refund path), `/api/health` reporting demo vs live, and
+  `instrumentation.ts` which **logs a launch blocker in production** if Supabase
+  env vars are missing.
 
 ### 3.5 Not implemented — the honest list
 
@@ -180,13 +198,13 @@ products, reviews after delivery.
 
 | # | Gap | Impact |
 |---|---|---|
-| G-2 | Live environment: Supabase project, Paystack keys, webhook secret, RLS audit run, PITR/backups | Everything is a demo until this exists |
-| G-3 | Transactional email (receipts, reset, dispute updates) | Buyers get no proof of purchase off-app |
-| G-4 | Rate limiting / CAPTCHA on auth, claims, disputes | Abuse and cost risk |
-| G-5 | Error monitoring + alerting (no Sentry-equivalent wired) | Failures are discovered by buyers |
-| G-6 | Real logistic integration (currently a sandbox tracking reference + webhook) | Delivery promises are cosmetic |
-| G-7 | Push notifications (web + later mobile) | Urgency loop depends on the buyer revisiting |
-| G-8 | E2E/browser tests (unit tests only) | Regressions in flows, not functions |
+| G-2 | Live environment: Supabase project, Paystack keys, webhook secret, PITR/backups. **The RLS audit half is closed and automated** — `supabase/tests/rls_audit.sql` (20 assertions) runs in CI on a real PostgreSQL and caught a privilege-escalation hole fixed by migration `0031`, plus weakened Storage upload policies fixed by `0032` | Everything is a demo until the project exists |
+| ~~G-3~~ | ~~Transactional email~~ **closed**: `_shared/notify.ts` (Resend + Termii) is called from 7 functions, and `/orders/[id]` is a printable receipt | — |
+| ~~G-4~~ | ~~Rate limiting~~ **closed**: `check_rate_limit()` (migration `0027`) guards every money/admin/write function; upload caps enforced by `upload_within_limits` | — |
+| ~~G-5~~ | ~~Error monitoring~~ **closed**: `_shared/monitor.ts` reports every caught failure to `ALERT_WEBHOOK_URL` | — |
+| G-6 | Real logistic integration — `logistics-create` is deployed **and** callable from the vendor dashboard (“Dispatch with Bale Drop tracking”), but the provider behind it is still the sandbox `testTracking()` | Delivery promises are cosmetic until a carrier is contracted |
+| ~~G-7~~ | ~~Push notifications~~ **closed for web**: `sw.js` + `push_subscriptions` + `push-send`. Mobile apps remain unbuilt | — |
+| G-8 | Browser E2E. The **database** money path is covered end-to-end (`supabase/tests/money_path.sql`, 22 assertions, in CI); what is missing is a Playwright run driving checkout against a Paystack test key | Regressions in flows, not functions |
 | G-9 | Payout automation still manual-ish (`vendor-payout` + `payout-reconcile`) | Ops cost grows linearly with vendors |
 
 ---

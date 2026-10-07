@@ -1,0 +1,104 @@
+name: CI
+
+# Every push and every PR runs the four gates the repo promises in
+# docs/ENGINEERING-STANDARDS.md: typecheck, lint, test, build — plus the two
+# gates that only exist because this project moves money:
+#   * the Edge Functions must at least parse (they hold the Paystack secret and
+#     Deno is not installed on most contributors' machines);
+#   * the migrations must apply to a real PostgreSQL and both scenarios must
+#     still pass (scripts/check-migrations.py + supabase/tests/*.sql):
+#     money_path.sql for the money lifecycle, rls_audit.sql for privilege
+#     escalation and row isolation.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Typecheck, lint, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+        env:
+          # The build must not need live credentials; `isSupabaseLive()` keeps
+          # every page rendering in the "not configured" state.
+          NEXT_TELEMETRY_DISABLED: "1"
+
+  edge-functions:
+    name: Edge Functions syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # Deno itself is only needed for the full `deno check`; the syntax gate
+      # runs on the TypeScript compiler that is already a devDependency.
+      - name: Syntax gate
+        run: npm run check:edge
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+        continue-on-error: true
+
+      - name: Full type check (Deno)
+        # Optional: needs network access to esm.sh. A failure here is reported
+        # but does not block, because the syntax gate above already ran.
+        run: npm run typecheck:edge
+        continue-on-error: true
+
+  database:
+    name: Migrations + money path
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install checker dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pglast pgserver
+
+      # Boots a real PostgreSQL, stubs the Supabase surface (auth schema, roles,
+      # storage schema) and — importantly — Supabase's permissive default table
+      # privileges, so a scenario can only pass because RLS, a column grant or a
+      # trigger stopped it. Applies every migration in order, then runs the
+      # repeatable scenarios in supabase/tests/*.sql.
+      - name: Apply migrations and run the database scenarios
+        run: python scripts/check-migrations.py

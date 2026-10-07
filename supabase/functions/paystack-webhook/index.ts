@@ -7,8 +7,12 @@
  * sets escrow to held, and writes idempotent transaction rows.
  *
  * Secrets: PAYSTACK_SECRET_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
+ * Optional: RESEND_API_KEY / TERMII_API_KEY / VAPID_* (see _shared/notify.ts) —
+ * without them the receipt is still stored in-app and the function stays quiet.
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { alert, logError, logInfo, logWarn } from "../_shared/monitor.ts";
+import { deliver, receiptContent } from "../_shared/notify.ts";
 
 const PAYSTACK_SECRET = Deno.env.get("PAYSTACK_SECRET_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -81,7 +85,12 @@ Deno.serve(async (req: Request) => {
 
   const raw = await req.text();
   if (!(await validSignature(raw, req.headers.get("x-paystack-signature")))) {
-    console.error("paystack-webhook: invalid signature");
+    logWarn("paystack-webhook", "rejected an unsigned or badly signed webhook", {
+      bytes: raw.length,
+    });
+    await alert("paystack-webhook", "a webhook failed signature verification", {
+      bytes: raw.length,
+    });
     return response("invalid signature", 401);
   }
 
@@ -275,14 +284,62 @@ Deno.serve(async (req: Request) => {
     // Returning non-200 lets Paystack retry transient delivery/database errors.
     // Signature-valid but mismatched payments stay out of escrow until an
     // operator reconciles them; never silently mark them paid.
-    console.error(
-      "paystack-webhook: finalization failed",
+    logError("paystack-webhook", error, { reference, scope: "finalize" });
+    await alert("paystack-webhook", "a paid charge could not be finalized", {
       reference,
-      error.message,
-    );
+      amount_naira: amountNaira,
+      reason: error.message,
+    });
     return response("finalization failed", 500);
   }
 
-  console.log("paystack-webhook: finalized", reference, data);
+  const result = data as
+    | { status?: string; kind?: string; order_ids?: string[]; booking_id?: string | null }
+    | null;
+
+  logInfo("paystack-webhook", "charge finalized", {
+    reference,
+    amount_naira: amountNaira,
+    status: result?.status ?? "unknown",
+    kind: result?.kind ?? "unknown",
+  });
+
+  // A duplicate is a replayed webhook: the receipt already went out the first
+  // time, and sending it twice would make a buyer think they paid twice.
+  if (result?.status === "success") {
+    const orderIds = Array.isArray(result.order_ids) ? result.order_ids : [];
+    const isSlot = result.kind === "slot";
+    const { data: session } = await db.from("payment_sessions")
+      .select("buyer_id")
+      .eq("reference", reference)
+      .maybeSingle();
+    const buyerId = (session as { buyer_id?: string } | null)?.buyer_id ?? null;
+
+    if (buyerId) {
+      const summary = await deliver(
+        db,
+        { profileId: buyerId },
+        receiptContent({
+          reference,
+          amountNaira,
+          orderIds,
+          kind: isSlot ? "slot" : "order",
+          channel: event.data?.channel == null ? null : String(event.data.channel),
+        }),
+      );
+      if (summary.email === "failed") {
+        // Money moved but the proof of purchase did not arrive. Not fatal, but
+        // an operator should know a paid buyer has no receipt.
+        logWarn("paystack-webhook", "receipt email failed", { reference });
+        await alert("paystack-webhook", "a receipt email failed to send", {
+          reference,
+          amount_naira: amountNaira,
+        });
+      }
+    } else {
+      logWarn("paystack-webhook", "no buyer on the finalized session", { reference });
+    }
+  }
+
   return response("ok", 200);
 });

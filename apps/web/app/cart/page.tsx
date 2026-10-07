@@ -62,8 +62,13 @@ export default function CartPage() {
   const [changes, setChanges] = useState<CartReconcileResult | null>(null);
 
   const delivery = DELIVERY_METHODS[0];
-  const subsidy = Math.min(DELIVERY_SUBSIDY_NAIRA, delivery.fee);
-  const estimatedTotal = subtotal + delivery.fee - subsidy;
+  // Delivery is charged per seller, so the estimate has to be too — otherwise
+  // the cart promises ₦2,500 and checkout (correctly) charges ₦5,000 for two
+  // shops. The subsidy is capped at the whole delivery, as the server does.
+  const vendorCount = Math.max(1, new Set(lines.map((line) => line.vendorId)).size);
+  const estimatedDelivery = delivery.fee * vendorCount;
+  const subsidy = Math.min(DELIVERY_SUBSIDY_NAIRA, estimatedDelivery);
+  const estimatedTotal = subtotal + estimatedDelivery - subsidy;
 
   /** Stable key: reconcile when the *set* of products changes, not on qty tweaks. */
   const lineSignature = lines.map((line) => `${line.productId}:${line.qty}`).join(",");
@@ -189,7 +194,7 @@ export default function CartPage() {
             {lines.map((line) => (
               <div key={line.productId} className="flex gap-3 p-4">
                 <Link href={`/listing/${line.productId}`} className="w-20 shrink-0 overflow-hidden rounded-xl border">
-                  <ProductArtFallback hue={line.hue} category={line.category} className="aspect-square w-full" />
+                  <ProductArtFallback hue={line.hue} category={line.category} src={line.imageUrl} alt={line.title} className="aspect-square w-full" />
                 </Link>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-3">
@@ -249,7 +254,7 @@ export default function CartPage() {
                 {saved.map((line) => (
                   <div key={line.productId} className="flex items-center gap-3 py-3">
                     <div className="w-12 shrink-0 overflow-hidden rounded-lg border">
-                      <ProductArtFallback hue={line.hue} category={line.category} className="aspect-square w-full" />
+                      <ProductArtFallback hue={line.hue} category={line.category} src={line.imageUrl} alt={line.title} className="aspect-square w-full" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-semibold">{line.title}</p>
@@ -309,9 +314,12 @@ export default function CartPage() {
               </div>
               <div className="flex justify-between">
                 <dt className="text-muted-foreground">
-                  Delivery to {city} <span className="block text-xs">from {naira(delivery.fee)}</span>
+                  Delivery to {city}{" "}
+                  <span className="block text-xs">
+                    {naira(delivery.fee)} per seller{vendorCount > 1 ? ` × ${vendorCount}` : ""}
+                  </span>
                 </dt>
-                <dd className="font-semibold tabular-nums">{naira(delivery.fee)}</dd>
+                <dd className="font-semibold tabular-nums">{naira(estimatedDelivery)}</dd>
               </div>
               <div className="flex justify-between text-emerald-700 dark:text-emerald-300">
                 <dt>Launch subsidy</dt>

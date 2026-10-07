@@ -71,8 +71,8 @@ export interface Database {
         Relationships: [];
       };
       orders: {
-        Row: { id: string; buyer_id: string; vendor_id: string; status: OrderStatus; escrow_status: EscrowStatus; subtotal_naira: number; delivery_fee_naira: number; subsidy_naira: number; total_naira: number; paystack_reference: string | null; tracking_number: string | null; tracking_url: string | null; delivered_at: string | null; address_id: string | null; shipping_address_snapshot: string | null; shipping_city: string | null; shipping_phone: string | null; inventory_released: boolean; created_at: string; updated_at: string };
-        Insert: { id?: string; buyer_id: string; vendor_id: string; status?: OrderStatus; escrow_status?: EscrowStatus; subtotal_naira?: number; delivery_fee_naira?: number; subsidy_naira?: number; total_naira?: number; paystack_reference?: string | null; tracking_number?: string | null; tracking_url?: string | null; delivered_at?: string | null; address_id?: string | null; shipping_address_snapshot?: string | null; shipping_city?: string | null; shipping_phone?: string | null; inventory_released?: boolean; created_at?: string; updated_at?: string };
+        Row: { id: string; buyer_id: string; vendor_id: string; status: OrderStatus; escrow_status: EscrowStatus; subtotal_naira: number; delivery_fee_naira: number; subsidy_naira: number; total_naira: number; paystack_reference: string | null; tracking_number: string | null; tracking_url: string | null; delivered_at: string | null; escrow_release_at: string | null; address_id: string | null; shipping_address_snapshot: string | null; shipping_city: string | null; shipping_phone: string | null; inventory_released: boolean; created_at: string; updated_at: string };
+        Insert: { id?: string; buyer_id: string; vendor_id: string; status?: OrderStatus; escrow_status?: EscrowStatus; subtotal_naira?: number; delivery_fee_naira?: number; subsidy_naira?: number; total_naira?: number; paystack_reference?: string | null; tracking_number?: string | null; tracking_url?: string | null; delivered_at?: string | null; escrow_release_at?: string | null; address_id?: string | null; shipping_address_snapshot?: string | null; shipping_city?: string | null; shipping_phone?: string | null; inventory_released?: boolean; created_at?: string; updated_at?: string };
         Update: Partial<Database["public"]["Tables"]["orders"]["Insert"]>;
         Relationships: [];
       };
@@ -184,6 +184,46 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["analytics_events"]["Insert"]>;
         Relationships: [];
       };
+      /** One row per promo redemption (migration 0025). Keyed on the payment
+       * reference so a replayed checkout cannot double-count a code. */
+      promo_redemptions: {
+        Row: { id: string; code: string; profile_id: string; payment_reference: string; amount_naira: number; created_at: string };
+        Insert: { id?: string; code: string; profile_id: string; payment_reference: string; amount_naira?: number; created_at?: string };
+        Update: Partial<Database["public"]["Tables"]["promo_redemptions"]["Insert"]>;
+        Relationships: [];
+      };
+      /** Operator-maintained query → category synonyms (migration 0026).
+       * Public read, admin write; consulted by `search_products()`. */
+      search_synonyms: {
+        Row: { id: string; term: string; category: string; created_at: string };
+        Insert: { id?: string; term: string; category: string; created_at?: string };
+        Update: Partial<Database["public"]["Tables"]["search_synonyms"]["Insert"]>;
+        Relationships: [];
+      };
+      /** Sliding-window limiter state (migration 0027). No client policies:
+       * only `check_rate_limit()` (service_role) may read or write it. */
+      rate_limits: {
+        Row: { bucket: string; window_start: string; hits: number };
+        Insert: { bucket: string; window_start?: string; hits?: number };
+        Update: Partial<Database["public"]["Tables"]["rate_limits"]["Insert"]>;
+        Relationships: [];
+      };
+      /** Immutable support conversation (migration 0028). `update`/`delete`
+       * are revoked from clients — a trail you can edit is not a trail. */
+      support_replies: {
+        Row: { id: string; message_id: string; author_profile_id: string | null; from_team: boolean; body: string; created_at: string };
+        Insert: { id?: string; message_id: string; author_profile_id?: string | null; from_team?: boolean; body: string; created_at?: string };
+        Update: Partial<Database["public"]["Tables"]["support_replies"]["Insert"]>;
+        Relationships: [];
+      };
+      /** Browser push endpoints (migration 0029). Owner insert/select/delete;
+       * no update, so a stolen session cannot silently retarget a device. */
+      push_subscriptions: {
+        Row: { id: string; profile_id: string; endpoint: string; p256dh_key: string; auth_key: string; user_agent: string | null; last_used_at: string | null; created_at: string };
+        Insert: { id?: string; profile_id: string; endpoint: string; p256dh_key: string; auth_key: string; user_agent?: string | null; last_used_at?: string | null; created_at?: string };
+        Update: Partial<Database["public"]["Tables"]["push_subscriptions"]["Insert"]>;
+        Relationships: [];
+      };
       /** Buyer/vendor support threads (migration 0020). Guests may insert. */
       support_messages: {
         Row: {
@@ -197,6 +237,8 @@ export interface Database {
           status: string;
           created_at: string;
           resolved_at: string | null;
+          first_response_at: string | null;
+          last_activity_at: string | null;
         };
         Insert: {
           id?: string;
@@ -209,12 +251,38 @@ export interface Database {
           status?: string;
           created_at?: string;
           resolved_at?: string | null;
+          first_response_at?: string | null;
+          last_activity_at?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["support_messages"]["Insert"]>;
         Relationships: [];
       };
     };
-    Views: Record<string, never>;
+    Views: {
+      /** Admin support workload (migration 0028). `security_invoker = on`, so
+       * the admin RLS on `support_messages` still decides what is visible. */
+      support_queue: {
+        Row: {
+          id: string;
+          profile_id: string | null;
+          name: string;
+          email: string;
+          topic: string;
+          body: string;
+          order_ref: string | null;
+          status: string;
+          created_at: string;
+          resolved_at: string | null;
+          first_response_at: string | null;
+          last_activity_at: string | null;
+          age_seconds: number;
+          first_response_seconds: number | null;
+          reply_count: number;
+          team_reply_count: number;
+        };
+        Relationships: [];
+      };
+    };
     Functions: {
       mark_notification_read: { Args: { p_id: string }; Returns: undefined };
       mark_all_notifications_read: { Args: Record<string, never>; Returns: number };
@@ -305,6 +373,99 @@ export interface Database {
         Args: { p_refund_id: string; p_status: string; p_paystack_refund_id?: string | null; p_error?: string | null };
         Returns: Json;
       };
+      /* ---------------- 0016 pending-payment expiry ---------------- */
+      expire_uninitialized_payment_sessions: {
+        Args: { p_age_minutes?: number };
+        Returns: Json;
+      };
+
+      /* ---------------- 0022 bale split lifecycle ---------------- */
+      commission_rate_for_vendor: {
+        Args: { p_vendor_id: string };
+        Returns: number;
+      };
+      create_bale_split: {
+        Args: { p_product_id: string; p_split_count: number; p_price_per_slot_naira: number; p_expires_hours?: number };
+        Returns: Json;
+      };
+      cancel_bale_split: { Args: { p_bale_id: string }; Returns: Json };
+      fulfil_bale_split: {
+        Args: { p_bale_id: string; p_vendor_profile_id: string; p_handover_note?: string | null };
+        Returns: Json;
+      };
+      complete_vendor_payout_checked: {
+        Args: { p_payout_id: string; p_expected_reference: string; p_status: string; p_transfer_code?: string | null; p_error?: string | null };
+        Returns: Json;
+      };
+
+      /* ---------------- 0023 escrow auto-release ---------------- */
+      escrow_release_window: { Args: Record<string, never>; Returns: string };
+      release_order_escrow: {
+        Args: { p_order_id: string; p_note?: string };
+        Returns: Json;
+      };
+      release_due_escrows: { Args: { p_batch?: number }; Returns: Json };
+
+      /* ---------------- 0024 listing management + metrics ---------------- */
+      set_listing_status: {
+        Args: { p_product_id: string; p_status: string };
+        Returns: Json;
+      };
+      record_product_view: { Args: { p_product_id: string }; Returns: Json };
+
+      /* ---------------- 0025 promo accounting ---------------- */
+      reserve_promo_code: {
+        Args: { p_code: string; p_profile_id: string; p_payment_reference: string };
+        Returns: Json;
+      };
+      release_promo_reservation: { Args: { p_payment_reference: string }; Returns: Json };
+
+      /* ---------------- 0026 full-text search ---------------- */
+      search_products: {
+        Args: {
+          p_query?: string | null;
+          p_category?: string | null;
+          p_city?: string | null;
+          p_grade?: string | null;
+          p_kind?: string | null;
+          p_vendor_id?: string | null;
+          p_min_naira?: number | null;
+          p_max_naira?: number | null;
+          p_sort?: string | null;
+          p_limit?: number | null;
+          p_offset?: number | null;
+        };
+        Returns: Json;
+      };
+
+      /* ---------------- 0027 rate limiting ---------------- */
+      check_rate_limit: {
+        Args: { p_bucket: string; p_limit: number; p_window_seconds: number };
+        Returns: Json;
+      };
+      prune_rate_limits: { Args: { p_older_than_minutes?: number }; Returns: Json };
+      upload_within_limits: {
+        Args: { p_metadata: Json; p_max_bytes: number; p_allowed_mime_prefixes: string[] };
+        Returns: boolean;
+      };
+
+      /* ---------------- 0029 push subscriptions ---------------- */
+      mark_push_delivery: {
+        Args: { p_endpoint: string; p_drop?: boolean };
+        Returns: Json;
+      };
+      list_push_endpoints: { Args: { p_profile_id: string }; Returns: Json };
+
+      /* ------------- 0031/0032 privilege + storage hardening ------------- */
+      /**
+       * Policy helper: does the caller own this order? SECURITY DEFINER so the
+       * `dispute-evidence` bucket policies can be evaluated by a role with no
+       * SELECT on `orders` (anon) — the same reason `is_admin()` is granted to
+       * anon in 0017. Never called from app code.
+       */
+      is_own_order: { Args: { p_order_id: string | null }; Returns: boolean };
+      /** BEFORE UPDATE guard on profiles/vendor_profiles/products; trigger-only. */
+      guard_protected_columns: { Args: Record<string, never>; Returns: undefined };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;

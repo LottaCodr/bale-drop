@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Check, Clock, Info, Loader2, Repeat, ShieldCheck, Truck, Upload } from "lucide-react";
+import { Check, Clock, Info, Loader2, Receipt, Repeat, ShieldCheck, TimerReset, Truck, Upload, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ProductArt } from "@/components/commerce";
 import { isSupabaseLive } from "@/lib/config";
 import { friendlyErrorMessage } from "@/lib/errors";
-import { naira } from "@/lib/format";
+import { naira, untilLabel } from "@/lib/format";
 import { supabaseBrowser } from "@/lib/supabase";
 import { invokeOperation } from "@/lib/operations";
 import { useCartStore } from "@/lib/store/cart-store";
@@ -21,6 +21,35 @@ import { cn } from "@/lib/utils";
 type OrderRow = Database["public"]["Tables"]["orders"]["Row"];
 type VendorRow = Database["public"]["Tables"]["vendor_profiles"]["Row"];
 type ItemRow = Database["public"]["Tables"]["order_items"]["Row"];
+type BookingRow = Database["public"]["Tables"]["bale_bookings"]["Row"];
+type BaleRow = Database["public"]["Tables"]["bale_listings"]["Row"];
+type ProductRow = Database["public"]["Tables"]["products"]["Row"];
+
+/**
+ * A Bale Split slot, as the buyer sees it.
+ *
+ * `bale_bookings` was never read anywhere in the app, so a buyer who paid for a
+ * slot had no record of it at all — no order row, no receipt, no refund status.
+ * Slots are not orders (they share a bale, and the money only settles when the
+ * split fills), so they get their own list here rather than being squeezed into
+ * the order timeline.
+ */
+type ViewSlot = {
+  id: string;
+  baleId: string;
+  title: string;
+  vendor: string;
+  productId: string | null;
+  amount: number;
+  date: string;
+  status: BookingRow["status"];
+  splitCount: number;
+  bookedCount: number;
+  baleStatus: BaleRow["status"];
+  expiresAt: string | null;
+  reference: string | null;
+  hue: number;
+};
 
 type TimelineRow = { id: string; order_id: string; status: string; note: string | null; created_at: string };
 
@@ -43,6 +72,8 @@ type ViewOrder = {
   escrow: OrderRow["escrow_status"];
   tracking?: string | null;
   trackingUrl?: string | null;
+  /** Set once delivery is marked: the moment the `escrow-release` cron pays the vendor. */
+  escrowReleaseAt?: string | null;
   step: number;
   hue: number;
   /** Everything the buyer bought — needed for a truthful reorder. */
@@ -108,6 +139,7 @@ function toViewOrder(
     escrow: order.escrow_status,
     tracking: order.tracking_number,
     trackingUrl: order.tracking_url,
+    escrowReleaseAt: order.escrow_release_at,
     step: orderStep(order.status, order.escrow_status),
     hue: hueFor(order.id),
     lines,
@@ -119,6 +151,29 @@ function toViewOrder(
 }
 
 const ORDER_STEPS = ["Ordered", "Paid (escrow)", "Processing", "In transit", "Delivered"] as const;
+
+const SLOT_BADGE: Record<string, "amber" | "default" | "verified" | "live"> = {
+  pending: "amber",
+  paid: "verified",
+  refunded: "live",
+  cancelled: "live",
+};
+
+const SLOT_LABEL: Record<string, string> = {
+  pending: "Awaiting payment",
+  paid: "Slot paid • escrow held",
+  refunded: "Refunded",
+  cancelled: "Cancelled",
+};
+
+const BALE_LABEL: Record<string, string> = {
+  open: "Split still open",
+  full: "Split full — settling",
+  processing: "Settling with the seller",
+  fulfilled: "Completed",
+  expired: "Did not fill in time",
+  cancelled: "Cancelled by the seller",
+};
 
 const TIMELINE_LABEL: Record<string, string> = {
   pending_payment: "Order created, awaiting payment",
@@ -135,6 +190,7 @@ const TIMELINE_LABEL: Record<string, string> = {
 export function OrdersClient() {
   const live = isSupabaseLive();
   const [orders, setOrders] = useState<ViewOrder[]>([]);
+  const [slots, setSlots] = useState<ViewSlot[]>([]);
   const [loading, setLoading] = useState(live);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -152,6 +208,7 @@ export function OrdersClient() {
   useEffect(() => {
     if (!live) {
       setOrders([]);
+      setSlots([]);
       setLoading(false);
       return;
     }
@@ -159,6 +216,52 @@ export function OrdersClient() {
     let active = true;
     const sb = supabaseBrowser();
     let channel: ReturnType<typeof sb.channel> | undefined;
+
+    /**
+     * Bale Split slots. Loaded next to the orders so a buyer who only ever
+     * joined a split still sees their money, its escrow state and its refund.
+     */
+    async function loadSlots(userId: string): Promise<ViewSlot[]> {
+      const { data: bookingRows, error: bookingError } = await sb
+        .from("bale_bookings")
+        .select("*")
+        .eq("buyer_id", userId)
+        .order("created_at", { ascending: false });
+      if (bookingError || !bookingRows?.length) return [];
+
+      const bookings = bookingRows as BookingRow[];
+      const baleIds = [...new Set(bookings.map((booking) => booking.bale_id))];
+      const { data: baleRows } = await sb.from("bale_listings").select("*").in("id", baleIds);
+      const bales = new Map((baleRows ?? []).map((bale) => [bale.id, bale as BaleRow]));
+      const productIds = [...new Set([...bales.values()].map((bale) => bale.product_id))];
+      const [{ data: productRows }, { data: vendorRows }] = await Promise.all([
+        productIds.length ? sb.from("products").select("*").in("id", productIds) : Promise.resolve({ data: [] as ProductRow[] }),
+        sb.from("vendor_profiles").select("id, shop_name"),
+      ]);
+      const products = new Map((productRows ?? []).map((row) => [row.id, row as ProductRow]));
+      const vendorName = new Map((vendorRows ?? []).map((row) => [row.id, row.shop_name]));
+
+      return bookings.map((booking) => {
+        const bale = bales.get(booking.bale_id);
+        const product = bale ? products.get(bale.product_id) : undefined;
+        return {
+          id: booking.id,
+          baleId: booking.bale_id,
+          title: product?.title ?? "Bale Split slot",
+          vendor: product ? vendorName.get(product.vendor_id) ?? "Verified vendor" : "Verified vendor",
+          productId: product?.id ?? null,
+          amount: booking.amount_naira,
+          date: new Date(booking.created_at).toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" }),
+          status: booking.status as BookingRow["status"],
+          splitCount: bale?.split_count ?? 0,
+          bookedCount: bale?.booked_count ?? 0,
+          baleStatus: (bale?.status ?? "open") as BaleRow["status"],
+          expiresAt: bale?.expires_at ?? null,
+          reference: booking.paystack_reference,
+          hue: hueFor(booking.id),
+        };
+      });
+    }
 
     async function load(userId: string) {
       setLoading(true);
@@ -178,15 +281,17 @@ export function OrdersClient() {
       const orderRows = rows as OrderRow[];
       const orderIds = orderRows.map((row) => row.id);
       const vendorIds = [...new Set(orderRows.map((row) => row.vendor_id))];
-      const [{ data: vendors }, { data: items }, { data: reviews }, { data: timeline }] = await Promise.all([
+      const [{ data: vendors }, { data: items }, { data: reviews }, { data: timeline }, slotRows] = await Promise.all([
         vendorIds.length ? sb.from("vendor_profiles").select("*").in("id", vendorIds) : Promise.resolve({ data: [] as VendorRow[] }),
         orderIds.length ? sb.from("order_items").select("*").in("order_id", orderIds) : Promise.resolve({ data: [] as ItemRow[] }),
         orderIds.length ? sb.from("reviews").select("order_id").in("order_id", orderIds) : Promise.resolve({ data: [] as { order_id: string }[] }),
         orderIds.length
           ? sb.from("order_timeline").select("id, order_id, status, note, created_at").in("order_id", orderIds)
           : Promise.resolve({ data: [] as TimelineRow[] }),
+        loadSlots(userId),
       ]);
       if (!active) return;
+      setSlots(slotRows);
       const vendorMap = new Map((vendors ?? []).map((vendor) => [vendor.id, vendor.shop_name]));
       const itemsByOrder = new Map<string, ItemRow[]>();
       for (const item of items ?? []) {
@@ -224,6 +329,11 @@ export function OrdersClient() {
         .on("postgres_changes", { event: "UPDATE", schema: "public", table: "orders", filter: `buyer_id=eq.${user.id}` }, () => {
           // The initial query is the source of truth; a refresh after a
           // webhook update keeps escrow status current without client writes.
+          void load(user.id);
+        })
+        .on("postgres_changes", { event: "*", schema: "public", table: "bale_bookings", filter: `buyer_id=eq.${user.id}` }, () => {
+          // A slot flips to `paid` from the webhook and to `refunded` from the
+          // expiry cron — both must show up without a manual refresh.
           void load(user.id);
         })
         .subscribe();
@@ -353,6 +463,11 @@ export function OrdersClient() {
     [orders]
   );
 
+  const activeSlots = useMemo(
+    () => slots.filter((slot) => slot.status === "paid" && !["expired", "cancelled", "fulfilled"].includes(slot.baleStatus)),
+    [slots]
+  );
+
   return (
     <div className="container max-w-3xl py-6">
       <div className="flex flex-wrap items-end justify-between gap-2">
@@ -362,9 +477,11 @@ export function OrdersClient() {
             Track your deliveries and confirm when they arrive. You can report a problem from an order.
           </p>
         </div>
-        {orders.length > 0 && (
+        {orders.length + slots.length > 0 && (
           <p className="text-[13px] text-muted-foreground">
-            <b className="text-foreground">{activeOrders.length}</b> active • {orders.length - activeOrders.length} finished
+            <b className="text-foreground">{activeOrders.length + activeSlots.length}</b> active •{" "}
+            {orders.length - activeOrders.length + slots.length - activeSlots.length} finished
+            {slots.length > 0 && <> • <b className="text-foreground">{slots.length}</b> split slot{slots.length === 1 ? "" : "s"}</>}
           </p>
         )}
       </div>
@@ -372,8 +489,86 @@ export function OrdersClient() {
       {loading && <div className="mt-8 flex items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading orders…</div>}
       {error && <p role="alert" className="mt-6 rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</p>}
       {notice && <p role="status" className="mt-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200">{notice}</p>}
-      {!loading && !error && orders.length === 0 && (
-        <Card className="mt-6 p-8 text-center"><h2 className="font-bold">No orders yet</h2><p className="mt-1 text-sm text-muted-foreground">Choose a listing and your paid orders will appear here.</p><Button className="mt-4" asChild><Link href="/search">Browse listings</Link></Button></Card>
+      {!loading && !error && orders.length === 0 && slots.length === 0 && (
+        <Card className="mt-6 p-8 text-center"><h2 className="font-bold">No orders yet</h2><p className="mt-1 text-sm text-muted-foreground">Choose a listing and your paid orders will appear here. Slots you join in a Bale Split show up here too.</p><Button className="mt-4" asChild><Link href="/search">Browse listings</Link></Button></Card>
+      )}
+
+      {slots.length > 0 && (
+        <section className="mt-6" aria-label="Bale Split slots">
+          <div className="flex items-center gap-2">
+            <Users className="h-4 w-4 text-primary" />
+            <h2 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">Bale Split slots</h2>
+          </div>
+          <div className="mt-3 flex flex-col gap-3">
+            {slots.map((slot) => {
+              const slotsLeft = Math.max(0, slot.splitCount - slot.bookedCount);
+              const filled = slot.bookedCount >= slot.splitCount && slot.splitCount > 0;
+              const closing = untilLabel(slot.expiresAt);
+              return (
+                <Card key={slot.id} className="overflow-hidden">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/50 px-4 py-3">
+                    <p className="text-sm font-bold">
+                      {`SLOT-${slot.id.slice(0, 6).toUpperCase()}`}{" "}
+                      <span className="font-normal text-muted-foreground">• {slot.date}</span>
+                    </p>
+                    <Badge variant={SLOT_BADGE[slot.status] ?? "default"} className="shrink-0">{SLOT_LABEL[slot.status] ?? slot.status}</Badge>
+                  </div>
+                  <div className="flex flex-col gap-3 p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-14 shrink-0 overflow-hidden rounded-xl border">
+                        <ProductArt hue={slot.hue} category="Bales" className="aspect-square w-full" iconClassName="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold">{slot.title}</p>
+                        <p className="text-xs text-muted-foreground">{slot.vendor}</p>
+                        <p className="text-sm font-extrabold tabular-nums">{naira(slot.amount)} <span className="text-xs font-medium text-muted-foreground">per slot</span></p>
+                      </div>
+                    </div>
+
+                    {slot.status === "paid" && (
+                      <div className="rounded-xl bg-muted/60 px-3 py-2.5 text-sm">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-semibold">{BALE_LABEL[slot.baleStatus] ?? slot.baleStatus}</span>
+                          <span className="tabular-nums text-muted-foreground">{slot.bookedCount}/{slot.splitCount} slots</span>
+                        </div>
+                        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-background" role="progressbar" aria-valuenow={slot.bookedCount} aria-valuemin={0} aria-valuemax={slot.splitCount} aria-label="Split fill progress">
+                          <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.min(100, Math.round((slot.bookedCount / Math.max(1, slot.splitCount)) * 100))}%` }} />
+                        </div>
+                        <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+                          {filled
+                            ? "The split filled. Your money is released to the seller once they hand over the bale."
+                            : slot.baleStatus === "expired" || slot.baleStatus === "cancelled"
+                              ? "This split did not complete, so your slot is refunded automatically."
+                              : `Held in escrow. ${slotsLeft} slot${slotsLeft === 1 ? "" : "s"} still needed${closing ? ` • closes ${closing}` : ""}. If it does not fill, you are refunded automatically.`}
+                        </p>
+                      </div>
+                    )}
+
+                    {slot.status === "refunded" && (
+                      <p className="flex items-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-2.5 text-sm font-semibold text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200">
+                        <TimerReset className="h-4 w-4" /> {naira(slot.amount)} refunded to your original payment method.
+                      </p>
+                    )}
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {slot.productId && (
+                        <Button variant="ghost" size="sm" asChild>
+                          <Link href={`/listing/${slot.productId}`}>View the bale</Link>
+                        </Button>
+                      )}
+                      {slot.reference && (
+                        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <Receipt className="h-3.5 w-3.5" /> Ref <span className="font-mono">{slot.reference}</span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        </section>
       )}
 
       <div className="mt-6 flex flex-col gap-4">
@@ -426,6 +621,11 @@ export function OrdersClient() {
                 )}
 
                 <div className="flex flex-wrap items-center gap-2">
+                  <Button variant="outline" size="sm" asChild>
+                    <Link href={`/orders/${order.id}`}>
+                      <Receipt className="h-4 w-4" /> Receipt
+                    </Link>
+                  </Button>
                   <Button
                     variant="outline"
                     size="sm"
@@ -451,7 +651,11 @@ export function OrdersClient() {
                       <Button variant="outline" className="flex-1" onClick={() => setDisputeOrder(disputeOrder === order.id ? null : order.id)}><Info /> Open dispute</Button>
                     </div>
                     {order.status === "paid" && <p className="text-xs text-muted-foreground">Your vendor must begin fulfillment before delivery can be confirmed.</p>}
-                    <p className="text-xs text-muted-foreground">Ignore this and escrow auto-releases 48 hours after delivery. You can still open a dispute before then.</p>
+                    <p className="text-xs text-muted-foreground">
+                      {order.escrowReleaseAt
+                        ? <>Ignore this and escrow auto-releases <b className="font-semibold text-foreground">{untilLabel(order.escrowReleaseAt)}</b>. You can still open a dispute before then.</>
+                        : "Ignore this and escrow auto-releases 48 hours after delivery is marked complete. You can still open a dispute before then."}
+                    </p>
                     {disputeOrder === order.id && <div className="rounded-xl border bg-muted/40 p-3"><label className="mb-1.5 block text-sm font-semibold" htmlFor={`reason-${order.id}`}>Reason</label><select id={`reason-${order.id}`} value={disputeReason} onChange={(event) => setDisputeReason(event.target.value)} className="h-10 w-full rounded-xl border border-input bg-background px-3 text-sm"><option>Item not as described</option><option>Order never arrived</option><option>Damaged or incomplete</option><option>Wrong item received</option></select><Textarea className="mt-2" placeholder="Tell us what happened" value={disputeDescription} onChange={(event) => setDisputeDescription(event.target.value)} /><label className="mt-2 flex cursor-pointer items-center gap-2 rounded-xl border border-dashed p-3 text-sm"><Upload className="h-4 w-4 text-primary" /><span>{evidenceFiles.length ? `${evidenceFiles.length} evidence file${evidenceFiles.length > 1 ? "s" : ""} selected` : "Attach photos or PDF evidence (optional)"}</span><input type="file" accept="image/*,.pdf" multiple className="sr-only" onChange={(event) => setEvidenceFiles(Array.from(event.target.files ?? []).slice(0, 5))} /></label><div className="mt-2 flex flex-wrap justify-end gap-2"><Button variant="ghost" size="sm" onClick={() => setDisputeOrder(null)}>Cancel</Button><Button size="sm" onClick={() => openDispute(order.id)} disabled={actionBusy === order.id}>{actionBusy === order.id ? "Opening…" : "Submit dispute"}</Button></div></div>}
                   </div>
                 )}

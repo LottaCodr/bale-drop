@@ -13,9 +13,11 @@
     "lint": "npm run lint --workspace apps/web",
     "typecheck": "npm run typecheck --workspace apps/web",
     "typecheck:edge": "deno check --no-config supabase/functions/*/index.ts",
+    "check:edge": "node scripts/check-edge-syntax.mjs",
+    "check:migrations": "python3 scripts/check-migrations.py",
     "test": "npm run test --workspace apps/web",
     "icons": "node scripts/generate-icons.mjs",
-    "check": "npm run typecheck && npm run lint && npm run test",
+    "check": "npm run typecheck && npm run lint && npm run test && npm run check:edge",
     "seed:demo-users": "node scripts/seed-demo-users.mjs"
   },
   "engines": {
