@@ -22,6 +22,10 @@ export function snapshotOf(
     category: product.category,
     grade: product.grade,
     hue: product.hue,
+    // Uploaded photo, when the listing has one. Persisted with the snapshot so
+    // cart, wishlist and recently-viewed keep showing the real product across
+    // reloads; `hue` stays as the offline/legacy fallback.
+    imageUrl: product.imageUrl ?? null,
     vendorId: vendor?.id ?? product.vendorId,
     vendorName: vendor?.shopName ?? "Verified vendor",
   };

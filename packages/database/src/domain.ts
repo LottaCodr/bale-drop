@@ -30,6 +30,15 @@ export interface Product {
   title: string;
   /** Present when the vendor wrote one; feeds search relevance. */
   description?: string;
+  /**
+   * Public URL of the seller's first photo, when they uploaded one.
+   *
+   * `product-images` is a public-read bucket (migration 0003), so this is a
+   * plain `/storage/v1/object/public/...` URL — no signed URL round trip on a
+   * grid of forty cards. Absent means the listing has no photo yet and the UI
+   * falls back to generated art.
+   */
+  imageUrl?: string;
   category: string;
   grade: Grade;
   price: number;
@@ -108,9 +117,27 @@ export function mapVendorRow(row: VendorRow): Vendor {
   };
 }
 
-export function mapProductRow(row: ProductRow): Product {
+/**
+ * Build the public URL for a `product-images` object.
+ * Returns undefined when no storage origin is configured (demo mode), so the
+ * caller's fallback art stays in charge instead of rendering a broken image.
+ */
+export function publicProductImageUrl(
+  storagePath: string | null | undefined,
+  supabaseUrl: string | null | undefined = typeof process !== "undefined"
+    ? process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.EXPO_PUBLIC_SUPABASE_URL
+    : undefined,
+): string | undefined {
+  if (!storagePath || !supabaseUrl) return undefined;
+  const origin = supabaseUrl.replace(/\/$/, "");
+  const path = storagePath.replace(/^\/+/, "");
+  return `${origin}/storage/v1/object/public/product-images/${path}`;
+}
+
+export function mapProductRow(row: ProductRow, imageUrl?: string | null): Product {
   return {
     id: row.id,
+    imageUrl: imageUrl ?? undefined,
     title: row.title,
     description: row.description ?? undefined,
     category: row.category,

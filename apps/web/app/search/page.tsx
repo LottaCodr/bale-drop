@@ -14,9 +14,11 @@ import { searchCatalog } from "@/lib/data";
 import { CATEGORIES, CITIES, GRADES, SORT_LABELS, SORTS, type SortKey } from "@/lib/taxonomy";
 import {
   activeFilterCount,
+  buildPageHref,
   buildSearchHref,
   describeSearch,
   hasAnyFilter,
+  parsePage,
   parseSearchParams,
   type RawSearchParams,
 } from "@/lib/search-params";
@@ -74,9 +76,11 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
   if (!isSupabaseLive()) return <ServiceUnavailable title="Search is temporarily unavailable" />;
   const raw = await searchParams;
   const filters = parseSearchParams(raw);
-  const data = await searchCatalog({ ...filters, limit: 40 });
+  const page = parsePage(raw);
+  const pageSize = 40;
+  const data = await searchCatalog({ ...filters, limit: pageSize, offset: (page - 1) * pageSize });
   if (!data) return <ServiceUnavailable title="Search is temporarily unavailable" />;
-  const { results, total, categoryCounts, vendors, splits } = data;
+  const { results, total, pages, categoryCounts, vendors, splits } = data;
   const filterCount = activeFilterCount(filters);
   const liveSplits = splits.slice(0, 3);
   const vendorById = new Map(vendors.map((vendor) => [vendor.id, vendor]));
@@ -283,6 +287,32 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
               <ProductCard key={entry.product.id} product={entry.product} vendor={entry.vendor} />
             ))}
           </div>
+
+          {/* Pager — plain links, so it works without JS and stays shareable. */}
+          {pages > 1 && (
+            <nav
+              aria-label="Search results pages"
+              className="mt-6 flex flex-wrap items-center justify-center gap-2"
+            >
+              {page > 1 && (
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={buildPageHref(filters, page - 1)} rel="prev">
+                    <ChevronRight className="h-4 w-4 rotate-180" /> Previous
+                  </Link>
+                </Button>
+              )}
+              <span className="px-2 text-[13px] font-semibold tabular-nums text-muted-foreground" aria-live="polite">
+                Page {page} of {pages}
+              </span>
+              {page < pages && (
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={buildPageHref(filters, page + 1)} rel="next">
+                    Next <ChevronRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+              )}
+            </nav>
+          )}
 
           {liveSplits.length > 0 && filterCount === 0 && (
             <section className="mt-10">

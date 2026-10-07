@@ -31,6 +31,8 @@ export interface ProductFilters {
   vendorId?: string;
   sort?: ProductSort;
   limit?: number;
+  /** Rows to skip — the pager's `(page - 1) * limit`. */
+  offset?: number;
 }
 
 /** Structural shape shared by domain products and DB rows. */
@@ -102,6 +104,7 @@ export function normalizeFilters(input: ProductFilters = {}): ProductFilters {
     vendorId: input.vendorId || undefined,
     sort: input.sort && PRODUCT_SORTS.includes(input.sort) ? input.sort : query ? "relevance" : "newest",
     limit: input.limit ? Math.max(1, Math.min(60, Math.round(input.limit))) : undefined,
+    offset: input.offset ? Math.max(0, Math.min(10_000, Math.round(input.offset))) : undefined,
   };
 }
 

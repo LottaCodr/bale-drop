@@ -27,6 +27,8 @@ export interface RecentItem {
   category: string;
   grade: Grade;
   hue: number;
+  /** Uploaded product photo (public storage URL), when the listing has one. */
+  imageUrl?: string | null;
   vendorId: string;
   vendorName: string;
   viewedAt: number;
@@ -107,6 +109,7 @@ function sanitizeRecent(value: unknown): RecentItem[] {
       category: typeof raw.category === "string" ? raw.category : "Bales",
       grade: raw.grade === "A" || raw.grade === "B" || raw.grade === "C" ? raw.grade : "B",
       hue: typeof raw.hue === "number" ? raw.hue : 160,
+      imageUrl: typeof raw.imageUrl === "string" && raw.imageUrl.startsWith("http") ? raw.imageUrl : null,
       vendorId: typeof raw.vendorId === "string" ? raw.vendorId : "",
       vendorName: typeof raw.vendorName === "string" ? raw.vendorName : "Verified vendor",
       viewedAt: typeof raw.viewedAt === "number" ? raw.viewedAt : Date.now(),

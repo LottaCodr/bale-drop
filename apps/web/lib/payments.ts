@@ -35,6 +35,16 @@ export interface InitializePaymentResult {
   amount_naira: number;
   already_processed?: boolean;
   order_ids?: string[];
+  /**
+   * The server-computed money breakdown (see docs/ENGINEERING-STANDARDS.md §4:
+   * totals are recomputed server-side, never trusted from the browser). The
+   * checkout summary reconciles against these before handing the buyer to
+   * Paystack, so what they saw is what they are charged.
+   */
+  subtotal_naira?: number;
+  delivery_fee_naira?: number;
+  subsidy_naira?: number;
+  promo_code?: string | null;
 }
 
 /**

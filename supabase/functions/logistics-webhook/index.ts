@@ -1,10 +1,15 @@
 /**
  * Provider-neutral logistics webhook. A real courier adapter can forward its
  * signed status events here; order state remains service-role/RPC controlled.
- * `delivered` is recorded for tracking but never releases escrow without the
- * buyer's explicit confirm-delivery action.
+ *
+ * `delivered` is applied through `set_order_fulfillment_status` (migration
+ * 0023): it stamps `delivered_at` and starts the 48-hour escrow release window,
+ * but it never moves money. The vendor is paid either when the buyer confirms,
+ * or when the `escrow-release` cron settles the window — and never while a
+ * dispute is open.
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { alert, logError, logInfo, logWarn } from "../_shared/monitor.ts";
 
 const WEBHOOK_SECRET = Deno.env.get("LOGISTICS_WEBHOOK_SECRET");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -88,6 +93,9 @@ Deno.serve(async (req: Request) => {
 
   const raw = await req.text();
   if (!(await validSignature(raw, req.headers.get("x-logistics-signature")))) {
+    logWarn("logistics-webhook", "rejected an unsigned courier event", {
+      bytes: raw.length,
+    });
     return json({ error: "invalid signature" }, 401);
   }
 
@@ -151,28 +159,64 @@ Deno.serve(async (req: Request) => {
     return json({ error: eventError.message }, 500);
   }
 
-  if (status !== "delivered") {
-    const { error: stateError } = await db.rpc("set_order_fulfillment_status", {
+  // Every status — including `delivered` — goes through the same RPC, so the
+  // timeline, the buyer notification and the release window are written by SQL
+  // in one transaction instead of being reconstructed here.
+  const { data: stateResult, error: stateError } = await db.rpc(
+    "set_order_fulfillment_status",
+    {
       p_order_id: order.id,
       p_vendor_profile_id: order.vendor_id,
       p_status: status,
       p_tracking_number: trackingNumber,
       p_tracking_url: trackingUrl,
+    },
+  );
+  if (stateError) {
+    logError("logistics-webhook", stateError, {
+      order_id: order.id,
+      status,
+      scope: "fulfillment",
     });
-    if (stateError) {
-      await db.from("fulfillment_events").delete().eq(
-        "external_event_id",
-        externalEventId,
-      );
-      return json({ error: stateError.message }, 409);
+    await db.from("fulfillment_events").delete().eq(
+      "external_event_id",
+      externalEventId,
+    );
+    // An order that is already refunded/cancelled/disputed is a normal race with
+    // a courier replay, not an incident — but it must not be silently dropped.
+    if (/not actionable|backwards/i.test(stateError.message)) {
+      return json({
+        ok: false,
+        order_id: order.id,
+        status,
+        skipped: stateError.message,
+      }, 409);
     }
+    await alert("logistics-webhook", "a courier event could not be applied", {
+      order_id: order.id,
+      status,
+      reason: stateError.message,
+    });
+    return json({ error: stateError.message }, 409);
   }
+
+  const applied = stateResult as
+    | { status?: string; escrow_release_at?: string; duplicate?: boolean }
+    | null;
+  logInfo("logistics-webhook", "courier event applied", {
+    order_id: order.id,
+    status,
+    duplicate: applied?.duplicate === true,
+    escrow_release_at: applied?.escrow_release_at ?? null,
+  });
 
   return json({
     ok: true,
     order_id: order.id,
     status,
     tracking_number: trackingNumber,
+    // Delivery starts the clock; it does not pay the vendor.
+    escrow_release_at: applied?.escrow_release_at ?? null,
     buyer_confirmation_required: status === "delivered",
   });
 });

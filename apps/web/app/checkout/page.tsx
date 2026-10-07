@@ -114,6 +114,16 @@ function CheckoutExperience() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [priceChanges, setPriceChanges] = useState<CartReconcileResult | null>(null);
   const [paymentState, setPaymentState] = useState<"idle" | "processing">("idle");
+  /**
+   * What the server says the buyer owes, once `paystack-initialize` has priced
+   * the cart. Until then this is null and the summary shows the local estimate.
+   */
+  const [serverMoney, setServerMoney] = useState<{
+    total: number;
+    delivery: number;
+    subsidy: number;
+    promoCode: string | null;
+  } | null>(null);
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const orderIdempotencyKey = useRef<string | null>(null);
   const [returnState, setReturnState] = useState<ReturnState | null>(reference ? "checking" : null);
@@ -238,9 +248,21 @@ function CheckoutExperience() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once per confirmation
   }, [returnState, returnSession]);
 
-  const fee = DELIVERY_METHODS.find((method) => method.id === delivery)?.fee ?? DELIVERY_METHODS[0].fee;
-  const subsidy = Math.min(DELIVERY_SUBSIDY_NAIRA, fee);
-  const total = subtotal + fee - subsidy;
+  // Delivery is charged per seller (each shop ships its own parcel), so a
+  // two-vendor cart pays the fee twice. `paystack-initialize` creates one order
+  // per vendor and charges exactly this — showing a single fee here is what
+  // used to make the summary disagree with the Paystack page.
+  const perOrderFee = DELIVERY_METHODS.find((method) => method.id === delivery)?.fee ?? DELIVERY_METHODS[0].fee;
+  const vendorCount = Math.max(1, new Set(lines.map((line) => line.vendorId)).size);
+  const fee = perOrderFee * vendorCount;
+  /**
+   * The launch subsidy is a server-side rule (`LAUNCH_DELIVERY_SUBSIDY_NAIRA` in
+   * paystack-initialize). This display value mirrors it; the number the buyer is
+   * actually charged comes back on the initialize response and replaces it.
+   */
+  const launchSubsidy = Math.min(DELIVERY_SUBSIDY_NAIRA, fee);
+  const subsidy = serverMoney?.subsidy ?? launchSubsidy;
+  const total = serverMoney?.total ?? subtotal + fee - launchSubsidy;
   const repricedNotice = useMemo(() => priceChanges?.repriced ?? [], [priceChanges]);
 
 
@@ -330,6 +352,17 @@ function CheckoutExperience() {
       setPaymentState("idle");
       setPaymentError("We couldn’t open the payment page. Please try again in a few minutes.");
       return;
+    }
+    // The server just priced this cart from live rows. Its numbers win — if the
+    // two disagree the buyer is redirected to Paystack for the *server* total,
+    // so the summary must not keep showing the estimate.
+    if (typeof data.amount_naira === "number") {
+      setServerMoney({
+        total: data.amount_naira,
+        delivery: data.delivery_fee_naira ?? fee,
+        subsidy: data.subsidy_naira ?? 0,
+        promoCode: data.promo_code ?? null,
+      });
     }
     track("place_order", { value: data.amount_naira ?? total, currency: "NGN", transaction_id: data.reference });
     setPaymentState("processing");
@@ -436,7 +469,7 @@ function CheckoutExperience() {
               {lines.map((line) => (
                 <div key={line.productId} className="flex items-center gap-3">
                   <div className="w-16 shrink-0 overflow-hidden rounded-xl border">
-                    <ProductArtFallback hue={line.hue} category={line.category} className="aspect-square w-full" />
+                    <ProductArtFallback hue={line.hue} category={line.category} src={line.imageUrl} alt={line.title} className="aspect-square w-full" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold">{line.title}</p>
@@ -566,18 +599,25 @@ function CheckoutExperience() {
                 <dd className="font-semibold tabular-nums">{naira(subtotal)}</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">Delivery</dt>
-                <dd className="font-semibold tabular-nums">{naira(fee)}</dd>
+                <dt className="text-muted-foreground">
+                  Delivery{vendorCount > 1 && <span className="block text-[11px]">{vendorCount} sellers × {naira(perOrderFee)}</span>}
+                </dt>
+                <dd className="font-semibold tabular-nums">{naira(serverMoney?.delivery ?? fee)}</dd>
               </div>
               <div className="flex justify-between text-emerald-700 dark:text-emerald-300">
-                <dt>Promo subsidy</dt>
+                <dt>{serverMoney?.promoCode || draft.promoCode ? "Delivery subsidy" : "Launch delivery subsidy"}</dt>
                 <dd className="font-semibold tabular-nums">−{naira(subsidy)}</dd>
               </div>
-              {draft.promoCode && (
+              {(serverMoney?.promoCode || draft.promoCode) && (
                 <div className="flex justify-between">
                   <dt className="text-muted-foreground">Promo code</dt>
-                  <dd className="font-semibold">{draft.promoCode}</dd>
+                  <dd className="font-semibold">{serverMoney?.promoCode ?? draft.promoCode}</dd>
                 </div>
+              )}
+              {serverMoney && (
+                <p className="rounded-lg bg-muted/60 px-2.5 py-1.5 text-[11px] text-muted-foreground">
+                  Confirmed by the server from live prices. Paystack will charge this exact amount.
+                </p>
               )}
               <Separator />
               <div className="flex justify-between text-base">

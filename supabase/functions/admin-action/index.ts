@@ -1,4 +1,11 @@
-/** Admin-only moderation, dispute resolution and audit operations. */
+/**
+ * Admin-only moderation, dispute resolution and audit operations.
+ *
+ * Every state change here is written to `admin_audit_log` and mirrored to the
+ * affected person out-of-app (email/SMS) — a rejected seller or a resolved
+ * dispute is exactly the kind of news that must not wait for someone to reopen
+ * the site.
+ */
 import {
   adminClient,
   authenticatedUser,
@@ -6,6 +13,9 @@ import {
   json,
   profile,
 } from "../_shared/auth.ts";
+import { enforceRateLimit } from "../_shared/rate-limit.ts";
+import { alert, logError, logInfo } from "../_shared/monitor.ts";
+import { deliver, disputeUpdateContent, refundContent, vendorDecisionContent } from "../_shared/notify.ts";
 
 const PAYSTACK_SECRET = Deno.env.get("PAYSTACK_SECRET_KEY");
 
@@ -15,11 +25,27 @@ type Body = {
     | "reject_vendor"
     | "approve_product"
     | "reject_product"
-    | "resolve_dispute";
+    | "resolve_dispute"
+    | "create_promo"
+    | "set_promo_active";
   entity_id?: string;
   reason?: string;
   resolution?: "buyer_refund" | "vendor_release";
+  /** `create_promo` only. */
+  code?: string;
+  amount_naira?: number;
+  kind?: string;
+  max_uses?: number | null;
+  expires_at?: string | null;
+  /** `set_promo_active` only. */
+  active?: boolean;
 };
+
+/** Promo codes are a money lever: tight shape checks before anything is written. */
+function normalizePromoCode(raw: string | undefined): string | null {
+  const code = (raw ?? "").trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "");
+  return code.length >= 3 && code.length <= 40 ? code : null;
+}
 
 type PaystackPayload = {
   status?: boolean;
@@ -163,10 +189,87 @@ Deno.serve(async (req: Request) => {
     return json(req, { error: "admin access required" }, 403);
   }
 
+  const limited = await enforceRateLimit(
+    req, db, "admin-action", user.id, 120, 60, cors(req),
+  );
+  if (limited) return limited;
+
   try {
     const body = await req.json() as Body;
-    if (!body.action || !body.entity_id) {
-      return json(req, { error: "action and entity_id are required" }, 400);
+    if (!body.action) {
+      return json(req, { error: "action is required" }, 400);
+    }
+    if (body.action !== "create_promo" && !body.entity_id) {
+      return json(req, { error: "entity_id is required" }, 400);
+    }
+
+    // ---------------- promo codes ----------------
+    // Codes could only be created by hand in seed.sql or the Table Editor, so a
+    // leaking discount had no off switch short of SQL. Creation and the
+    // active flag are the only two writes; `used` stays owned by
+    // reserve_promo_code / release_promo_reservation (migration 0025).
+    if (body.action === "create_promo") {
+      const code = normalizePromoCode(body.code);
+      if (!code) {
+        return json(req, { error: "a code of 3–40 letters, numbers, - or _ is required" }, 400);
+      }
+      const amount = Math.round(Number(body.amount_naira));
+      if (!Number.isFinite(amount) || amount < 0 || amount > 1_000_000) {
+        return json(req, { error: "amount_naira must be between 0 and 1,000,000" }, 400);
+      }
+      const maxUses = body.max_uses == null || body.max_uses === ""
+        ? null
+        : Math.round(Number(body.max_uses));
+      if (maxUses !== null && (!Number.isFinite(maxUses) || maxUses < 1)) {
+        return json(req, { error: "max_uses must be a positive whole number or empty" }, 400);
+      }
+      let expiresAt: string | null = null;
+      if (body.expires_at) {
+        const parsed = Date.parse(String(body.expires_at));
+        if (Number.isNaN(parsed)) {
+          return json(req, { error: "expires_at is not a valid date" }, 400);
+        }
+        expiresAt = new Date(parsed).toISOString();
+      }
+
+      const { data: existing } = await db.from("promo_codes").select("id, code")
+        .eq("code", code).maybeSingle();
+      if (existing) {
+        return json(req, { error: `${code} already exists` }, 409);
+      }
+
+      const kind = body.kind === "percentage" ? "percentage" : "delivery_subsidy";
+      const { data: created, error: insertError } = await db.from("promo_codes")
+        .insert({
+          code,
+          kind,
+          amount_naira: amount,
+          max_uses: maxUses,
+          active: true,
+          expires_at: expiresAt,
+        })
+        .select("*")
+        .single();
+      if (insertError) throw insertError;
+      await audit(db, user.id, "create_promo", "promo_code", created.id, null, created, body.reason);
+      logInfo("admin-action", "promo created", { code, amount_naira: amount, max_uses: maxUses });
+      return json(req, { ok: true, result: created });
+    }
+
+    if (body.action === "set_promo_active") {
+      const { data: before, error: readError } = await db.from("promo_codes")
+        .select("*").eq("id", body.entity_id!).maybeSingle();
+      if (readError) throw readError;
+      if (!before) return json(req, { error: "promo code not found" }, 404);
+      const active = body.active !== false;
+      const { data: after, error } = await db.from("promo_codes")
+        .update({ active }).eq("id", before.id).select("*").single();
+      if (error) throw error;
+      await audit(db, user.id, active ? "activate_promo" : "deactivate_promo", "promo_code", before.id, before, after, body.reason);
+      logInfo("admin-action", active ? "promo activated" : "promo deactivated", {
+        code: before.code,
+      });
+      return json(req, { ok: true, result: after });
     }
 
     if (body.action === "approve_vendor" || body.action === "reject_vendor") {
@@ -205,6 +308,17 @@ Deno.serve(async (req: Request) => {
             "Please review your documents and resubmit."),
         href: "/vendor",
       });
+      // The in-app row above is the durable record; this is the copy that
+      // reaches a seller who is not looking at the dashboard.
+      await deliver(
+        db,
+        { profileId: before.profile_id },
+        vendorDecisionContent(approved ? "approved" : "rejected", body.reason),
+      );
+      logInfo("admin-action", "vendor decision recorded", {
+        vendor_id: body.entity_id,
+        decision: approved ? "approved" : "rejected",
+      });
       return json(req, { ok: true, result: after });
     }
 
@@ -241,7 +355,24 @@ Deno.serve(async (req: Request) => {
               "Please update the listing and resubmit."),
           href: "/vendor",
         });
+        await deliver(db, { profileId: vendor.profile_id }, {
+          title: approved ? "Listing is live" : "Listing needs changes",
+          body: approved
+            ? `${before.title} is now visible to buyers.`
+            : (body.reason?.trim() || "Please update the listing and resubmit."),
+          href: "/vendor",
+          email: {
+            subject: approved
+              ? `Bale Drop — "${before.title}" is live`
+              : `Bale Drop — "${before.title}" needs changes`,
+            ctaLabel: "Open seller workspace",
+          },
+        });
       }
+      logInfo("admin-action", "listing decision recorded", {
+        product_id: body.entity_id,
+        decision: approved ? "approved" : "rejected",
+      });
       return json(req, { ok: true, result: after });
     }
 
@@ -400,6 +531,25 @@ Deno.serve(async (req: Request) => {
           const message = initiated.payload?.message ||
             "Paystack refund failed";
           await settleRefund(db, refund, "failed", null, message);
+          logError("admin-action", new Error(message), {
+            scope: "refund",
+            dispute_id: dispute.id,
+          });
+          await alert("admin-action", "a dispute refund was rejected by Paystack", {
+            dispute_id: dispute.id,
+            order_id: order.id,
+            amount_naira: refund.amount_naira,
+            reason: message,
+          });
+          await deliver(
+            db,
+            { profileId: order.buyer_id },
+            refundContent(
+              refund.amount_naira,
+              "The dispute was resolved in your favour. Our team is completing this refund manually.",
+              refund.paystack_reference,
+            ),
+          );
           await audit(
             db,
             user.id,
@@ -432,6 +582,27 @@ Deno.serve(async (req: Request) => {
         refund_status: status,
         paystack_refund_id: providerId,
       }, body.reason);
+      if (status === "processed") {
+        await deliver(
+          db,
+          { profileId: order.buyer_id },
+          refundContent(
+            refund.amount_naira,
+            "The dispute was resolved in your favour.",
+            refund.paystack_reference,
+          ),
+        );
+      } else if (status === "failed" || status === "needs_attention") {
+        await alert("admin-action", "a dispute refund needs attention", {
+          dispute_id: dispute.id,
+          order_id: order.id,
+          status,
+        });
+      }
+      logInfo("admin-action", "dispute refund settled", {
+        dispute_id: dispute.id,
+        status,
+      });
       return json(req, {
         ok: true,
         dispute_id: dispute.id,
@@ -462,13 +633,47 @@ Deno.serve(async (req: Request) => {
       { resolution: body.resolution },
       body.reason,
     );
+    // `release_disputed_order_to_vendor` writes both in-app rows; this is the
+    // out-of-app half for the buyer (who lost) and the vendor (who is paid).
+    await deliver(
+      db,
+      { profileId: order.buyer_id },
+      disputeUpdateContent(
+        "resolved_vendor",
+        body.reason?.trim() ||
+          "Our team reviewed the evidence and released this order to the vendor.",
+      ),
+    );
+    const { data: releasedVendor } = await db.from("vendor_profiles").select(
+      "profile_id",
+    ).eq("id", order.vendor_id).maybeSingle();
+    if (releasedVendor?.profile_id) {
+      await deliver(db, { profileId: releasedVendor.profile_id }, {
+        title: "Dispute resolved in your favour — payout queued",
+        body: `Order ${order.id.slice(0, 8)} was released to you. The payout is queued for transfer.`,
+        href: "/vendor",
+        email: {
+          subject: "Bale Drop — dispute resolved in your favour",
+          details: [["Order", order.id], ["Net payout", `₦${(order.subtotal_naira ?? 0).toLocaleString("en-NG")}`]],
+          ctaLabel: "Open seller workspace",
+        },
+        sms: "Bale Drop: the dispute was resolved in your favour and your payout is queued.",
+      });
+    }
+    logInfo("admin-action", "dispute resolved", {
+      dispute_id: dispute.id,
+      resolution: body.resolution,
+    });
     return json(req, {
       ok: true,
       dispute_id: dispute.id,
       resolution: body.resolution,
     });
   } catch (error) {
-    console.error("admin-action:", error);
+    logError("admin-action", error);
+    await alert("admin-action", "an admin action failed", {
+      reason: error instanceof Error ? error.message : String(error),
+    });
     return json(req, {
       error: error instanceof Error ? error.message : "Admin action failed",
     }, 400);

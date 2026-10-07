@@ -3,11 +3,16 @@
  * Releases stale slot reservations, expires open splits and reconciles each
  * paid-slot refund through the same idempotent refund state machine used by
  * admin refunds.
+ *
+ * Also the housekeeping pass: expired rate-limit windows are pruned here so the
+ * `rate_limits` table cannot grow without bound.
  */
 import {
   createClient,
   type SupabaseClient,
 } from "https://esm.sh/@supabase/supabase-js@2";
+import { alert, logError, logInfo, logWarn } from "../_shared/monitor.ts";
+import { deliver, refundContent } from "../_shared/notify.ts";
 
 const CRON_SECRET = Deno.env.get("CRON_SECRET");
 const PAYSTACK_SECRET = Deno.env.get("PAYSTACK_SECRET_KEY");
@@ -174,6 +179,26 @@ async function reconcileRefund(db: EdgeDb, booking: Booking) {
         p_paystack_refund_id: null,
         p_error: message,
       });
+      // A buyer is owed money and the provider refused. This is the single most
+      // important thing an operator can be paged about.
+      logError("bale-expiry", new Error(message), {
+        scope: "refund",
+        booking_id: booking.id,
+      });
+      await alert("bale-expiry", "a split refund was rejected by Paystack", {
+        booking_id: booking.id,
+        amount_naira: refund.amount_naira,
+        reason: message,
+      });
+      await deliver(
+        db as any,
+        { profileId: booking.buyer_id },
+        refundContent(
+          refund.amount_naira,
+          "The split did not fill in time. Our team is completing this refund manually and will update you.",
+          refund.paystack_reference,
+        ),
+      );
       return { booking_id: booking.id, status: "failed", error: message };
     }
     if (!initiated.payload) {
@@ -200,6 +225,27 @@ async function reconcileRefund(db: EdgeDb, booking: Booking) {
       : null,
   });
   if (settleError) throw settleError;
+
+  // The in-app row is written by `settle_bale_refund`; this is the out-of-app
+  // copy so the buyer learns about their money without opening the site.
+  if (nextStatus === "processed") {
+    await deliver(
+      db as any,
+      { profileId: booking.buyer_id },
+      refundContent(
+        refund.amount_naira,
+        "The Bale Split did not fill before its deadline.",
+        refund.paystack_reference,
+      ),
+    );
+  } else if (nextStatus === "failed" || nextStatus === "needs_attention") {
+    await alert("bale-expiry", "a split refund needs attention", {
+      booking_id: booking.id,
+      amount_naira: refund.amount_naira,
+      status: nextStatus,
+    });
+  }
+
   return { booking_id: booking.id, status: nextStatus };
 }
 
@@ -224,11 +270,23 @@ Deno.serve(async (req: Request) => {
       { p_age_minutes: 30 },
     );
   if (paymentExpiryError) {
-    console.error(
-      "bale-expiry: payment-session expiry failed",
-      paymentExpiryError.message,
-    );
+    logError("bale-expiry", paymentExpiryError, { scope: "payment-expiry" });
+    await alert("bale-expiry", "payment-session expiry failed", {
+      reason: paymentExpiryError.message,
+    });
   }
+
+  // Housekeeping: drop rate-limit windows that can no longer be hit.
+  const { data: pruned, error: pruneError } = await (db as any).rpc(
+    "prune_rate_limits",
+    { p_older_than_minutes: 180 },
+  );
+  if (pruneError) {
+    logWarn("bale-expiry", "rate-limit pruning failed", {
+      reason: pruneError.message,
+    });
+  }
+  const prunedRows = (pruned as { pruned?: number } | null)?.pruned ?? 0;
 
   // Failed checkout rollback can leave a cancelled order with
   // inventory_released=false if a single release call timed out. Retry the
@@ -280,6 +338,10 @@ Deno.serve(async (req: Request) => {
     });
   }
   if (!expired || expired.length === 0) {
+    logInfo("bale-expiry", "nothing to expire", {
+      inventory_recovery: inventoryRecovery.length,
+      rate_limit_rows_pruned: prunedRows,
+    });
     return new Response(
       JSON.stringify({
         expired: 0,
@@ -287,6 +349,7 @@ Deno.serve(async (req: Request) => {
         payment_expiry: paymentExpiry ??
           { error: paymentExpiryError?.message ?? null },
         inventory_recovery: inventoryRecovery.length,
+        rate_limit_rows_pruned: prunedRows,
       }),
       { status: 200 },
     );
@@ -314,6 +377,19 @@ Deno.serve(async (req: Request) => {
     }),
   );
 
+  const rejected = results.filter((result) => result.status === "rejected");
+  logInfo("bale-expiry", "run complete", {
+    expired: expired.length,
+    failures: rejected.length,
+    rate_limit_rows_pruned: prunedRows,
+  });
+  if (rejected.length > 0) {
+    await alert("bale-expiry", "some expired splits could not be refunded", {
+      failures: rejected.length,
+      reason: String((rejected[0] as PromiseRejectedResult).reason).slice(0, 300),
+    });
+  }
+
   return new Response(
     JSON.stringify({
       expired: expired.length,
@@ -321,6 +397,7 @@ Deno.serve(async (req: Request) => {
       payment_expiry: paymentExpiry ??
         { error: paymentExpiryError?.message ?? null },
       inventory_recovery: inventoryRecovery.length,
+      rate_limit_rows_pruned: prunedRows,
     }),
     { status: 200 },
   );

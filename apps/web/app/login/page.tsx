@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { AuthShell, FormAlert, GoogleIcon } from "@/components/auth/auth-shell";
+import { DEMO_ACCOUNTS, DEMO_PASSWORD, demoLoginsEnabled } from "@/lib/auth/demo-accounts";
 import { supabaseBrowser } from "@/lib/supabase";
 import { isSupabaseLive } from "@/lib/config";
 import { friendlyAuthError, messageForErrorParam, type AuthErrorKind } from "@/lib/auth/errors";
@@ -17,7 +18,7 @@ import { isValidEmail, normalizeEmail } from "@/lib/auth/validation";
 import { track } from "@/lib/analytics";
 import { hardNavigate } from "@/lib/auth/navigate";
 
-/** Login — real Supabase auth when live, demo pass-through in mock mode. */
+/** Login — real Supabase auth when live; demo shortcuts only in development. */
 
 function LoginForm() {
   const params = useSearchParams();
@@ -36,6 +37,8 @@ function LoginForm() {
   );
   const [busy, setBusy] = useState<string | null>(null);
   const [resent, setResent] = useState(false);
+  // Build-time constant: inlined by Next, so a production bundle cannot flip it.
+  const showDemo = demoLoginsEnabled();
 
   async function completeSignIn(userId: string, metadata: Record<string, unknown> | undefined) {
     const sb = supabaseBrowser();
@@ -87,6 +90,17 @@ function LoginForm() {
     setBusy(null);
     if (err) setError(friendlyAuthError(err));
     else setResent(true);
+  }
+
+  /**
+   * One-tap access to the seeded accounts (buyer / vendor / admin) so a
+   * reviewer can reach every role-gated surface without typing credentials.
+   * Same code path as the form — no bypass, no synthetic session.
+   */
+  function signInAsDemo(accountEmail: string) {
+    setEmail(accountEmail);
+    setPassword(DEMO_PASSWORD);
+    void signIn({ email: accountEmail, password: DEMO_PASSWORD }, `demo-${accountEmail}`);
   }
 
   async function signInWithGoogle() {
@@ -186,6 +200,36 @@ function LoginForm() {
         New here? <Link href={`/signup${next !== "/" ? `?next=${encodeURIComponent(next)}` : ""}`} className="font-semibold text-primary hover:underline">Create an account</Link>
       </p>
 
+      {showDemo && (
+        <div className="mt-5 rounded-xl border border-dashed bg-muted/40 p-3">
+          <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+            Development shortcuts — seeded demo accounts
+          </p>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            Visible because <code className="font-mono">NEXT_PUBLIC_DEMO_LOGINS=true</code> in a non-production build.
+            Requires <code className="font-mono">npm run seed:demo-users</code>.
+          </p>
+          <div className="mt-2 grid gap-2 sm:grid-cols-3">
+            {DEMO_ACCOUNTS.map((account) => (
+              <button
+                key={account.email}
+                type="button"
+                onClick={() => signInAsDemo(account.email)}
+                disabled={disabled}
+                className="rounded-lg border bg-card px-3 py-2 text-left transition hover:border-primary/60 disabled:opacity-60"
+              >
+                <span className="flex items-center gap-1.5 text-[13px] font-bold">
+                  {busy === `demo-${account.email}` && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  {account.label}
+                </span>
+                <span className="mt-0.5 block text-[11px] leading-tight text-muted-foreground">
+                  {account.description}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </Card>
   );
 }

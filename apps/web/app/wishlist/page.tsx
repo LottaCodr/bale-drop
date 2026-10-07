@@ -75,7 +75,7 @@ export default function WishlistPage() {
         {items.map((item) => (
           <div key={item.productId} className="flex flex-wrap items-center gap-3 p-4">
             <Link href={`/listing/${item.productId}`} className="w-16 shrink-0 overflow-hidden rounded-xl border">
-              <ProductArtFallback hue={item.hue} category={item.category} className="aspect-square w-full" />
+              <ProductArtFallback hue={item.hue} category={item.category} src={item.imageUrl} alt={item.title} className="aspect-square w-full" />
             </Link>
             <div className="min-w-0 flex-1">
               <Link href={`/listing/${item.productId}`} className="line-clamp-2 text-sm font-semibold hover:text-primary">

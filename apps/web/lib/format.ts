@@ -44,3 +44,22 @@ export function pad(n: number): string {
 export function pluralize(count: number, one: string, many?: string): string {
   return count === 1 ? one : (many ?? `${one}s`);
 }
+
+/**
+ * "in 45 min" / "in 31 h" / "in 4 days" — the countdown a buyer actually needs
+ * for an escrow release or a closing split.
+ *
+ * Returns `null` when there is no date to count to (or it is unparseable) so
+ * callers can drop the sentence instead of printing "in NaN h". Past-due reads
+ * "now": the release is due, the cron will pick it up.
+ */
+export function untilLabel(iso: string | null | undefined, now: number = Date.now()): string | null {
+  if (!iso) return null;
+  const ms = Date.parse(iso) - now;
+  if (Number.isNaN(ms)) return null;
+  if (ms <= 0) return "now";
+  const hours = Math.floor(ms / 3_600_000);
+  if (hours < 1) return `in ${Math.max(1, Math.round(ms / 60_000))} min`;
+  if (hours < 48) return `in ${hours} h`;
+  return `in ${Math.round(hours / 24)} days`;
+}

@@ -34,7 +34,7 @@ export function RecentlyViewedRail({ excludeId, limit = 6 }: { excludeId?: strin
               href={`/listing/${item.productId}`}
               className="flex flex-col overflow-hidden rounded-2xl border bg-card transition hover:-translate-y-0.5 hover:shadow-card"
             >
-              <ProductArtFallback hue={item.hue} category={item.category} />
+              <ProductArtFallback hue={item.hue} category={item.category} src={item.imageUrl} alt={item.title} />
               <span className="flex flex-1 flex-col gap-1 p-2.5">
                 <span className="line-clamp-2 text-[13px] font-semibold leading-snug">{item.title}</span>
                 <span className="mt-auto text-sm font-extrabold tabular-nums">{naira(item.price)}</span>

@@ -57,7 +57,14 @@ export async function pushWishlistToggle(productId: string, saved: boolean): Pro
       data: { user },
     } = await sb.auth.getUser();
     if (!user) return;
-    if (saved) await sb.from("wishlists").upsert({ profile_id: user.id, product_id: productId }, { onConflict: "profile_id,product_id" });
+    if (saved) {
+      // `ignoreDuplicates` maps to ON CONFLICT DO NOTHING: re-saving a favourite
+      // that another device already stored is a no-op, not an UPDATE. Keeps the
+      // write inside the insert/delete privileges 0031 grants clients.
+      await sb
+        .from("wishlists")
+        .upsert({ profile_id: user.id, product_id: productId }, { onConflict: "profile_id,product_id", ignoreDuplicates: true });
+    }
     else await sb.from("wishlists").delete().eq("profile_id", user.id).eq("product_id", productId);
   } catch {
     /* best effort — the local store remains authoritative for this device */

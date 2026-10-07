@@ -6,9 +6,13 @@
  * asks Paystack for an authorization URL. It never accepts a client total.
  *
  * Secrets: PAYSTACK_SECRET_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
- * Optional: SITE_URL (the public web origin used for Paystack callbacks).
+ * Optional: SITE_URL (the public web origin used for Paystack callbacks),
+ * LAUNCH_DELIVERY_SUBSIDY_NAIRA (default 1500, set to 0 to turn the launch
+ * subsidy off).
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { alert, logError, logInfo, logWarn } from "../_shared/monitor.ts";
+import { enforceRateLimit, requestIp } from "../_shared/rate-limit.ts";
 
 const PAYSTACK_SECRET = Deno.env.get("PAYSTACK_SECRET_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -21,6 +25,19 @@ const DELIVERY_FEES: Record<string, number> = {
 };
 
 const ALLOWED_CHANNELS = ["card", "bank_transfer", "ussd"];
+
+/**
+ * The launch delivery subsidy is a *server-side* rule.
+ *
+ * The checkout page has always shown "−₦1,500 Promo subsidy" on every order, but
+ * the server only applied a discount when a promo code was supplied — so the
+ * buyer was charged ₦1,500 more than the summary promised. The amount now lives
+ * here (and in `apps/web/lib/taxonomy.ts` for display), never in the request.
+ */
+const LAUNCH_DELIVERY_SUBSIDY_NAIRA = Math.max(
+  0,
+  Number(Deno.env.get("LAUNCH_DELIVERY_SUBSIDY_NAIRA") ?? "1500") || 0,
+);
 
 type CheckoutItem = { product_id: string; qty: number };
 type ShippingBody = {
@@ -237,6 +254,22 @@ Deno.serve(async (req: Request) => {
     return json(req, { error: "session expired — sign in again" }, 401);
   }
 
+  // Payment creation is the most expensive endpoint to abuse (it reserves
+  // inventory and opens a Paystack authorization), so it gets the tightest
+  // budget: 20 attempts per buyer per 5 minutes, with the IP as a second
+  // bucket to catch shared accounts.
+  const limited = await enforceRateLimit(
+    req, db, "payment-initialize", user.id, 20, 300, headers(req),
+  );
+  if (limited) return limited;
+  const ip = requestIp(req);
+  if (ip) {
+    const ipLimited = await enforceRateLimit(
+      req, db, "payment-initialize-ip", ip, 60, 300, headers(req),
+    );
+    if (ipLimited) return ipLimited;
+  }
+
   let body: InitializeBody;
   try {
     body = await req.json() as InitializeBody;
@@ -258,6 +291,10 @@ Deno.serve(async (req: Request) => {
   const createdOrderIds: string[] = [];
   let paymentSessionReference: string | null = null;
   let inventoryReserved = false;
+  // Set once `reserve_promo_code` has taken a redemption. If the attempt dies
+  // before a payment session exists (so the release trigger cannot fire), the
+  // outer catch gives the redemption back explicitly.
+  let promoReservationReference: string | null = null;
 
   try {
     // Replaying the same browser attempt must reuse its server-created
@@ -553,38 +590,63 @@ Deno.serve(async (req: Request) => {
         ? body.delivery_method
         : "standard";
     const deliveryFee = DELIVERY_FEES[deliveryMethod];
-    let subsidy = 0;
+
+    // The delivery fee is charged per vendor order (each vendor ships
+    // separately), so the discount pool is the whole batch's delivery.
+    const deliveryPool = deliveryFee * vendorIds.length;
+
+    // Reference first: promo redemption is keyed on it, and a replay of the
+    // same idempotency key reuses the same reference (never double-counting).
+    const paymentReference = reference();
+
     let promoCode: string | null = null;
+    let promoAmount = 0;
     if (body.promo_code) {
-      const { data: promo } = await db
-        .from("promo_codes")
-        .select("code, amount_naira, max_uses, used, active, expires_at")
-        .eq("code", body.promo_code.trim().toUpperCase())
-        .eq("active", true)
-        .maybeSingle();
-      if (
-        promo &&
-        (!promo.expires_at || new Date(promo.expires_at) > new Date()) &&
-        (promo.max_uses == null || promo.used < promo.max_uses)
-      ) {
-        subsidy = Math.max(
-          0,
-          Math.min(Number(promo.amount_naira), deliveryFee * vendorIds.length),
-        );
-        promoCode = promo.code;
+      const { data: reserved, error: promoError } = await db.rpc(
+        "reserve_promo_code",
+        {
+          p_code: body.promo_code,
+          p_profile_id: user.id,
+          p_payment_reference: paymentReference,
+        },
+      );
+      if (promoError) {
+        // A limiter/DB failure must not silently drop a paid-for discount.
+        logError("paystack-initialize", promoError, { scope: "promo" });
+        throw promoError;
+      }
+      const reservation = reserved as
+        | { valid?: boolean; code?: string; amount_naira?: number; reason?: string }
+        | null;
+      if (reservation?.valid) {
+        promoCode = reservation.code ?? null;
+        promoAmount = Math.max(0, Number(reservation.amount_naira ?? 0));
+        promoReservationReference = paymentReference;
+      } else if (reservation?.reason) {
+        logInfo("paystack-initialize", "promo code not applied", {
+          reason: reservation.reason,
+        });
       }
     }
 
+    // A promo can only ever *increase* the discount above the launch subsidy,
+    // so the buyer is never charged more than the checkout summary promised.
+    const subsidy = Math.min(
+      deliveryPool,
+      Math.max(LAUNCH_DELIVERY_SUBSIDY_NAIRA, promoAmount),
+    );
+
     const orderIds = createdOrderIds;
     let totalNaira = 0;
+    let subsidyLeft = subsidy;
     for (const [vendorId, group] of grouped) {
       const subtotal = group.reduce(
         (sum, line) => sum + line.product.price_naira * line.qty,
         0,
       );
-      const orderSubsidy = orderIds.length === 0
-        ? Math.min(subsidy, deliveryFee)
-        : 0;
+      // Spread the discount across the vendor orders, never below a zero total.
+      const orderSubsidy = Math.min(subsidyLeft, deliveryFee);
+      subsidyLeft -= orderSubsidy;
       const total = subtotal + deliveryFee - orderSubsidy;
       const { data: order, error: orderError } = await db
         .from("orders")
@@ -626,7 +688,6 @@ Deno.serve(async (req: Request) => {
     if (inventoryError) throw inventoryError;
     inventoryReserved = true;
 
-    const paymentReference = reference();
     const { data: session, error: sessionError } = await db
       .from("payment_sessions")
       .insert({
@@ -643,6 +704,8 @@ Deno.serve(async (req: Request) => {
           item_count: items.length,
           payment_method: preferredChannel,
           idempotency_key: idempotencyKey,
+          subsidy_naira: subsidy,
+          launch_subsidy_naira: LAUNCH_DELIVERY_SUBSIDY_NAIRA,
         },
       })
       .select("id, reference, amount_naira")
@@ -670,11 +733,24 @@ Deno.serve(async (req: Request) => {
           access_code: initialized.access_code,
         }).eq("id", session.id);
       if (sessionUpdateError) throw sessionUpdateError;
+      logInfo("paystack-initialize", "payment session created", {
+        reference: session.reference,
+        amount_naira: totalNaira,
+        orders: orderIds.length,
+        subsidy_naira: subsidy,
+        promo_code: promoCode ?? "none",
+      });
       return json(req, {
         ...initialized,
         payment_session_id: session.id,
         order_ids: orderIds,
         amount_naira: totalNaira,
+        // Echo the server-computed money so the browser can reconcile its
+        // display total against what Paystack will actually charge.
+        subtotal_naira: totalNaira - (deliveryFee * orderIds.length) + subsidy,
+        delivery_fee_naira: deliveryFee * orderIds.length,
+        subsidy_naira: subsidy,
+        promo_code: promoCode,
       });
     } catch (error) {
       // The outer catch cancels the session through the atomic recovery RPC.
@@ -684,10 +760,14 @@ Deno.serve(async (req: Request) => {
     }
   } catch (error) {
     if (isAmbiguousInitialization(error)) {
-      console.error(
-        "paystack-initialize: ambiguous provider response",
-        error.message,
-      );
+      logWarn("paystack-initialize", "ambiguous provider response", {
+        reference: paymentSessionReference ?? "none",
+        reason: error.message,
+      });
+      await alert("paystack-initialize", "Paystack initialization is ambiguous", {
+        reference: paymentSessionReference ?? "none",
+        reason: error.message,
+      });
       return json(req, {
         error: error.message,
         retry_same_attempt: true,
@@ -698,7 +778,9 @@ Deno.serve(async (req: Request) => {
     let recoveryError: string | null = null;
     if (paymentSessionReference) {
       // This RPC releases every order line in one database transaction. Do not
-      // also release individual products from the Edge runtime.
+      // also release individual products from the Edge runtime. The same call
+      // marks the session failed/abandoned, and the `promo_release` trigger
+      // gives the promo redemption back.
       const { error: cancelError } = await db.rpc("cancel_payment_session", {
         p_reference: paymentSessionReference,
         p_reason: error instanceof Error
@@ -706,7 +788,27 @@ Deno.serve(async (req: Request) => {
           : "Paystack initialization failed",
       });
       recoveryError = cancelError?.message ?? null;
-    } else if (inventoryReserved && createdOrderIds.length > 0) {
+    } else if (promoReservationReference) {
+      // The attempt died before a payment session existed, so nothing will fire
+      // the release trigger — undo the redemption here. This is tracked
+      // separately: a stuck promo redemption must not stop inventory recovery
+      // from marking the orders released.
+      const { error: promoReleaseError } = await db.rpc(
+        "release_promo_reservation",
+        { p_payment_reference: promoReservationReference },
+      );
+      if (promoReleaseError) {
+        logError("paystack-initialize", promoReleaseError, {
+          scope: "promo-release",
+          reference: promoReservationReference,
+        });
+        await alert("paystack-initialize", "a promo redemption could not be released", {
+          reference: promoReservationReference,
+          reason: promoReleaseError.message,
+        });
+      }
+    }
+    if (!paymentSessionReference && inventoryReserved) {
       // No session exists yet (for example, the session insert failed), so
       // restore each fully-reserved order with an idempotent RPC.
       const restorations = await Promise.allSettled(

@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -64,32 +65,67 @@ export function GradeBadge({ grade, className }: { grade: Grade; className?: str
   );
 }
 
-/** Zero-network product art: gradient + category glyph. Replaced by Supabase Storage images in prod. */
+/**
+ * Product art: the seller's photo when there is one, generated gradient + category
+ * glyph when there is not.
+ *
+ * Listings have always been able to carry uploaded photos (`product_images`,
+ * public-read bucket), but this component never looked at them, so a shop's real
+ * stock was invisible and every card showed the same abstract gradient. The
+ * fallback stays: a listing with no photo still renders instantly, with no
+ * network request and no layout shift (the caller fixes the aspect ratio).
+ */
 export function ProductArt({
   hue,
   category,
   className,
   iconClassName,
+  src,
+  alt,
+  priority = false,
 }: {
   hue: number;
   category: string;
   className?: string;
   iconClassName?: string;
+  /** Public `product-images` URL from `publicProductImageUrl()`. */
+  src?: string | null;
+  /** Meaningful alt text when a real photo is shown. */
+  alt?: string;
+  /** Above-the-fold hero images only. */
+  priority?: boolean;
 }) {
   const Icon = CATEGORY_ICONS[category] ?? Package;
-  return (
-    <div
-      aria-hidden="true"
-      className={cn("relative flex items-center justify-center overflow-hidden", className)}
-      style={{
-        background: `linear-gradient(135deg, hsl(${hue} 45% 92%), hsl(${(hue + 40) % 360} 50% 82%))`,
-      }}
-    >
+  const fallback = (
+    <>
       <div
         className="absolute inset-0 opacity-40"
         style={{ background: `radial-gradient(circle at 80% 10%, hsl(${hue} 60% 70% / 0.6), transparent 55%)` }}
       />
       <Icon className={cn("h-16 w-16 text-white drop-shadow-sm", iconClassName)} strokeWidth={1.25} />
+    </>
+  );
+
+  return (
+    <div
+      aria-hidden={src ? undefined : "true"}
+      className={cn("relative flex items-center justify-center overflow-hidden", className)}
+      style={src ? undefined : {
+        background: `linear-gradient(135deg, hsl(${hue} 45% 92%), hsl(${(hue + 40) % 360} 50% 82%))`,
+      }}
+    >
+      {src ? (
+        <Image
+          src={src}
+          alt={alt ?? ""}
+          fill
+          priority={priority}
+          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+          className="object-cover"
+        />
+      ) : (
+        fallback
+      )}
     </div>
   );
 }
@@ -175,7 +211,7 @@ export function ProductCard({ product, vendor }: { product: Product; vendor: Ven
       className="group flex flex-col overflow-hidden rounded-2xl border bg-card shadow-card transition hover:-translate-y-0.5 hover:shadow-pop"
     >
       <div className="relative">
-        <ProductArt hue={product.hue} category={product.category} className="aspect-[4/3] w-full" />
+        <ProductArt hue={product.hue} category={product.category} className="aspect-[4/3] w-full bg-muted" src={product.imageUrl} alt={product.title} />
         <div className="absolute left-2.5 top-2.5 flex gap-1.5">
           <GradeBadge grade={product.grade} />
           {product.tag && <Badge variant="amber">{product.tag}</Badge>}
@@ -232,7 +268,7 @@ export function BaleSplitCard({
       )}
     >
       <div className="relative">
-        <ProductArt hue={product.hue} category={product.category} className="aspect-[16/8] w-full" iconClassName="h-20 w-20" />
+        <ProductArt hue={product.hue} category={product.category} className="aspect-[16/8] w-full bg-muted" iconClassName="h-20 w-20" src={product.imageUrl} alt={product.title} />
         <div className="absolute left-3 top-3 flex gap-1.5">
           <Badge variant="live">
             <span className="relative flex h-2 w-2" aria-hidden="true">

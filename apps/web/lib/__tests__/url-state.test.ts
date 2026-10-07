@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   activeFilterCount,
+  buildPageHref,
   buildSearchHref,
   describeSearch,
   hasAnyFilter,
+  MAX_PAGE,
+  parsePage,
   parseSearchParams,
   toQueryString,
 } from "@/lib/search-params";
 import { sanitizeProps } from "@/lib/analytics";
-import { naira, timeLeft, toKobo } from "@/lib/format";
+import { naira, timeLeft, toKobo, untilLabel } from "@/lib/format";
 
 /**
  * Filters are URL state: parsing, serialising and link-building must round-trip
@@ -115,5 +118,64 @@ describe("money + time formatting", () => {
     expect(timeLeft(now + 2 * 3600_000).urgency).toBe("critical");
     expect(timeLeft(now - 1000).urgency).toBe("expired");
     expect(timeLeft(now - 1000).expired).toBe(true);
+  });
+});
+
+describe("search pager", () => {
+  it("defaults to page 1 and rejects nonsense", () => {
+    expect(parsePage({})).toBe(1);
+    expect(parsePage({ page: "3" })).toBe(3);
+    expect(parsePage({ page: "0" })).toBe(1);
+    expect(parsePage({ page: "-2" })).toBe(1);
+    expect(parsePage({ page: "abc" })).toBe(1);
+    expect(parsePage({ page: ["4", "9"] })).toBe(4);
+  });
+
+  it("caps the page so a hand-edited URL cannot ask for an absurd offset", () => {
+    expect(parsePage({ page: "999999" })).toBe(MAX_PAGE);
+  });
+
+  it("omits page 1 from the query string and keeps every filter on later pages", () => {
+    const filters = parseSearchParams({ q: "denim", city: "Lagos", grade: "a", sort: "price_asc" });
+    expect(buildPageHref(filters, 1)).toBe("/search?q=denim&city=Lagos&grade=A&sort=price_asc");
+    expect(buildPageHref(filters, 3)).toBe("/search?q=denim&city=Lagos&grade=A&sort=price_asc&page=3");
+  });
+
+  it("drops back to page 1 when a filter changes", () => {
+    const filters = parseSearchParams({ q: "denim", page: "4" } as never);
+    expect(buildSearchHref(filters, { city: "Kano" })).toBe("/search?q=denim&city=Kano");
+  });
+
+  it("round-trips a paged URL", () => {
+    const raw = { q: "bale", page: "2" };
+    const filters = parseSearchParams(raw);
+    expect(parsePage(raw)).toBe(2);
+    expect(toQueryString({ ...filters, page: 2 })).toBe("?q=bale&page=2");
+  });
+});
+
+describe("escrow countdown copy", () => {
+  const now = Date.parse("2026-03-01T12:00:00.000Z");
+
+  it("says nothing when there is no date", () => {
+    expect(untilLabel(null, now)).toBeNull();
+    expect(untilLabel(undefined, now)).toBeNull();
+    expect(untilLabel("not a date", now)).toBeNull();
+  });
+
+  it("reads as due once the release time has passed", () => {
+    expect(untilLabel("2026-03-01T11:59:59.000Z", now)).toBe("now");
+    expect(untilLabel("2026-03-01T12:00:00.000Z", now)).toBe("now");
+  });
+
+  it("switches units at the boundaries a buyer cares about", () => {
+    expect(untilLabel("2026-03-01T12:20:00.000Z", now)).toBe("in 20 min");
+    // Under an hour still rounds up to at least a minute, never "in 0 min".
+    expect(untilLabel("2026-03-01T12:00:20.000Z", now)).toBe("in 1 min");
+    expect(untilLabel("2026-03-01T19:00:00.000Z", now)).toBe("in 7 h");
+    expect(untilLabel("2026-03-02T11:00:00.000Z", now)).toBe("in 23 h");
+    // 48 h is the escrow window: at and beyond it, days are the honest unit.
+    expect(untilLabel("2026-03-03T12:00:00.000Z", now)).toBe("in 2 days");
+    expect(untilLabel("2026-03-06T12:00:00.000Z", now)).toBe("in 5 days");
   });
 });

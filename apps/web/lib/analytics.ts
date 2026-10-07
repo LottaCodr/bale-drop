@@ -38,6 +38,9 @@ export type AnalyticsEvent =
   | "vendor_apply_start"
   | "vendor_apply_submit"
   | "notification_open"
+  /** Push opt-in/out — the rate decides whether the notification promise holds. */
+  | "push_enabled"
+  | "push_disabled"
   | "support_open"
   | "support_resolved";
 
