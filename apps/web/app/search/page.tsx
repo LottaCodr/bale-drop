@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { BaleSplitCard, ProductCard, SectionHeader, VendorCard } from "@/components/commerce";
 import { RecentlyViewedRail } from "@/components/recently-viewed";
+import { SaveSearchButton } from "@/components/save-search";
 import { SearchTracker } from "@/components/search-tracker";
 import { ServiceUnavailable } from "@/components/service-unavailable";
 import { isSupabaseLive } from "@/lib/config";
@@ -118,6 +119,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
             </Link>
           </Button>
         )}
+        <SaveSearchButton queryJson={filters} />
       </div>
 
       {/* ---------- Filter bar (GET form: works without JS, shareable URLs) ---------- */}
