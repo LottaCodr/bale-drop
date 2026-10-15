@@ -25,6 +25,7 @@ import { QtyStepper } from "@/components/qty-stepper";
 import { RecentlyViewedRail } from "@/components/recently-viewed";
 import { ProductArtFallback } from "@/components/product-art-fallback";
 import { useCartStore, selectItemCount, selectSaved, selectSubtotal } from "@/lib/store/cart-store";
+import { useCartServerSync } from "@/lib/store/cart-sync-hook";
 import { useHasMounted } from "@/lib/store/hooks";
 import { useDeliveryCity } from "@/lib/store/hooks";
 import { reconcileCart, type CartReconcileResult } from "@/lib/cart-sync";
@@ -55,6 +56,7 @@ export default function CartPage() {
   const moveToCart = useCartStore((state) => state.moveToCart);
   const removeSaved = useCartStore((state) => state.removeSaved);
   const city = useDeliveryCity();
+  useCartServerSync();
 
   const [promoDraft, setPromoDraft] = useState("");
   const [promoNote, setPromoNote] = useState<string | null>(null);
