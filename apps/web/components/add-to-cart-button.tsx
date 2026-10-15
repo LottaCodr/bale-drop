@@ -31,6 +31,7 @@ export function AddToCartButton({
   variant?: "outline" | "default" | "accent" | "secondary";
   className?: string;
 }) {
+  const openDrawer = useCartStore((state) => state.openDrawer);
   const add = useCartStore((state) => state.add);
   const inCart = useInCart(product.id);
   const [justAdded, setJustAdded] = useState(false);
@@ -49,6 +50,7 @@ export function AddToCartButton({
       currency: "NGN",
     });
     setJustAdded(true);
+    openDrawer();
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => setJustAdded(false), 2600);
   }
@@ -65,14 +67,15 @@ export function AddToCartButton({
 /** Post-add confirmation row with the running total and a cart shortcut. */
 export function AddedToCartNote({ product, qty = 1 }: { product: Product; qty?: number }) {
   const inCart = useInCart(product.id);
+  const openDrawer = useCartStore((state) => state.openDrawer);
   if (!inCart) return null;
   return (
     <p className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
       <Check className="h-3.5 w-3.5 text-primary" />
       In your cart • {naira(product.price * qty)} •{" "}
-      <Link href="/cart" className="font-semibold text-primary hover:underline">
+      <button onClick={openDrawer} className="font-semibold text-primary hover:underline">
         View cart
-      </Link>
+      </button>
     </p>
   );
 }

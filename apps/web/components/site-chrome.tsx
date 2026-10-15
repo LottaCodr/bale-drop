@@ -25,6 +25,8 @@ import { NotificationBell } from "@/components/notification-bell";
 import { SearchField } from "@/components/search-field";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { WishlistCount } from "@/components/wishlist-count";
+import { CartDrawer } from "@/components/cart-drawer";
+import { useCartStore } from "@/lib/store/cart-store";
 import { cn } from "@/lib/utils";
 
 /* ---------- Brand ---------- */
@@ -80,11 +82,9 @@ export function SiteHeader() {
           </Button>
           <NotificationBell />
           <ThemeToggle />
-          <Button variant="ghost" size="icon" aria-label="Cart" className="relative h-9 w-9 sm:h-10 sm:w-10" asChild>
-            <Link href="/cart">
-              <ShoppingBag className="h-5 w-5" />
-              <CartCount />
-            </Link>
+          <Button variant="ghost" size="icon" aria-label="Cart" className="relative h-9 w-9 sm:h-10 sm:w-10" onClick={() => { useCartStore.getState().openDrawer(); }}>
+            <ShoppingBag className="h-5 w-5" />
+            <CartCount />
           </Button>
           <Button size="sm" className="hidden sm:inline-flex" asChild>
             <Link href="/sell">
@@ -99,6 +99,7 @@ export function SiteHeader() {
         <SearchField placeholder="Search bales, sneakers, vintage…" />
       </div>
     </header>
+    <CartDrawer />
   );
 }
 
