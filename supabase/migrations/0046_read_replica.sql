@@ -1,0 +1,1 @@
+-- Migration 0046 — Read replica / cache layer (N-20) — placeholder for future read-replica connection string and query routing.

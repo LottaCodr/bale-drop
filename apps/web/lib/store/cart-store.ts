@@ -58,6 +58,7 @@ export interface CartState {
   saved: CartLine[];
   promoCode: string | null;
   hydrated: boolean;
+  drawerOpen: boolean;
   updatedAt: number;
   add: (input: CartLineInput, qty?: number) => CartMutation;
   setQty: (productId: string, qty: number) => void;
@@ -72,6 +73,8 @@ export interface CartState {
    *  sanitised, so partially-trusted rows are fine to pass through. */
   replace: (lines: CartLineInput[]) => void;
   markHydrated: () => void;
+  openDrawer: () => void;
+  closeDrawer: () => void;
 }
 
 function clampQty(qty: number): number {
@@ -121,7 +124,11 @@ export const useCartStore = create<CartState>()(
       saved: [],
       promoCode: null,
       hydrated: false,
+      drawerOpen: false,
       updatedAt: 0,
+
+      openDrawer: () => set({ drawerOpen: true }),
+      closeDrawer: () => set({ drawerOpen: false }),
 
       add: (input, qty = 1) => {
         const desired = clampQty(input.qty ?? qty);
