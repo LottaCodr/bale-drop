@@ -103,7 +103,7 @@ export function sanitizeLine(value: unknown): CartLine | null {
   };
 }
 
-function sanitizeList(value: unknown): CartLine[] {
+export function sanitizeList(value: unknown): CartLine[] {
   if (!Array.isArray(value)) return [];
   const seen = new Set<string>();
   const out: CartLine[] = [];

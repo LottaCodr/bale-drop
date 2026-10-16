@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -33,14 +34,25 @@ import { cn } from "@/lib/utils";
 
 export function Logo({ compact = false, responsive = false }: { compact?: boolean; responsive?: boolean }) {
   return (
-    <Link href="/" className="flex items-center gap-2" aria-label="Bale Drop home">
-      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow">
-        <Package className="h-5 w-5" />
-      </span>
+    <Link href="/" className="inline-flex shrink-0 items-center rounded-lg bg-white px-1" aria-label="Bale Drop home">
       {!compact && (
-        <span className={cn("text-lg font-extrabold tracking-tight", responsive && "hidden min-[360px]:inline")}>
-          Bale<span className="text-primary">Drop</span>
-        </span>
+        <Image
+          src="/bale-logo/bale-drop-logo.jpeg"
+          alt=""
+          width={160}
+          height={58}
+          priority
+          className={cn("h-auto w-36 sm:w-40", responsive && "max-[359px]:hidden")}
+        />
+      )}
+      {(compact || responsive) && (
+        <Image
+          src="/bale-logo/bale-favicon.jpeg"
+          alt=""
+          width={31}
+          height={40}
+          className={cn("h-10 w-auto", responsive && !compact && "min-[360px]:hidden")}
+        />
       )}
     </Link>
   );
@@ -61,45 +73,47 @@ export function AnnouncementBar() {
 
 export function SiteHeader() {
   return (
-    // pt keeps the sticky chrome clear of notches / status bars (viewport-fit: cover).
-    <header className="sticky top-0 z-40 border-b bg-background/90 pt-[env(safe-area-inset-top)] backdrop-blur">
-      <div className="container flex h-16 items-center gap-2 sm:gap-3">
-        <Logo responsive />
-        {/* Desktop search — real /search route (was a dead anchor) */}
-        <div className="mx-auto hidden w-full max-w-xl flex-1 md:block">
-          <SearchField />
+    <>
+      {/* pt keeps the sticky chrome clear of notches / status bars (viewport-fit: cover). */}
+      <header className="sticky top-0 z-40 border-b bg-background/90 pt-[env(safe-area-inset-top)] backdrop-blur">
+        <div className="container flex h-16 items-center gap-2 sm:gap-3">
+          <Logo responsive />
+          {/* Desktop search — real /search route (was a dead anchor) */}
+          <div className="mx-auto hidden w-full max-w-xl flex-1 md:block">
+            <SearchField />
+          </div>
+          <div className="ml-auto flex items-center gap-1 sm:gap-1.5">
+            <CityPicker />
+            <Badge variant="verified" className="hidden xl:inline-flex">
+              <ShieldCheck /> Escrow protected
+            </Badge>
+            <Button variant="ghost" size="icon" aria-label="Wishlist" className="relative hidden h-9 w-9 sm:inline-flex sm:h-10 sm:w-10" asChild>
+              <Link href="/wishlist">
+                <Heart className="h-5 w-5" />
+                <WishlistCount />
+              </Link>
+            </Button>
+            <NotificationBell />
+            <ThemeToggle />
+            <Button variant="ghost" size="icon" aria-label="Cart" className="relative h-9 w-9 sm:h-10 sm:w-10" onClick={() => { useCartStore.getState().openDrawer(); }}>
+              <ShoppingBag className="h-5 w-5" />
+              <CartCount />
+            </Button>
+            <Button size="sm" className="hidden sm:inline-flex" asChild>
+              <Link href="/sell">
+                <Store /> Sell
+              </Link>
+            </Button>
+            <AuthButton />
+          </div>
         </div>
-        <div className="ml-auto flex items-center gap-1 sm:gap-1.5">
-          <CityPicker />
-          <Badge variant="verified" className="hidden xl:inline-flex">
-            <ShieldCheck /> Escrow protected
-          </Badge>
-          <Button variant="ghost" size="icon" aria-label="Wishlist" className="relative hidden h-9 w-9 sm:inline-flex sm:h-10 sm:w-10" asChild>
-            <Link href="/wishlist">
-              <Heart className="h-5 w-5" />
-              <WishlistCount />
-            </Link>
-          </Button>
-          <NotificationBell />
-          <ThemeToggle />
-          <Button variant="ghost" size="icon" aria-label="Cart" className="relative h-9 w-9 sm:h-10 sm:w-10" onClick={() => { useCartStore.getState().openDrawer(); }}>
-            <ShoppingBag className="h-5 w-5" />
-            <CartCount />
-          </Button>
-          <Button size="sm" className="hidden sm:inline-flex" asChild>
-            <Link href="/sell">
-              <Store /> Sell
-            </Link>
-          </Button>
-          <AuthButton />
+        {/* Mobile search row */}
+        <div className="container pb-3 md:hidden">
+          <SearchField placeholder="Search bales, sneakers, vintage…" />
         </div>
-      </div>
-      {/* Mobile search row */}
-      <div className="container pb-3 md:hidden">
-        <SearchField placeholder="Search bales, sneakers, vintage…" />
-      </div>
-    </header>
-    <CartDrawer />
+      </header>
+      <CartDrawer />
+    </>
   );
 }
 

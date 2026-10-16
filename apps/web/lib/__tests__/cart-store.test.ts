@@ -5,6 +5,7 @@ import {
   cartItemCount,
   cartSubtotal,
   sanitizeLine,
+  sanitizeList,
   selectItemCount,
   selectSubtotal,
   useCartStore,
@@ -130,6 +131,17 @@ describe("cart sanitisation", () => {
   it("repairs a partially corrupt persisted line instead of dropping the cart", () => {
     const line = sanitizeLine({ productId: "p1", qty: -4, title: "", price: "free", grade: "Z" });
     expect(line).toMatchObject({ productId: "p1", qty: 1, title: "Bale Drop item", price: 0, grade: "B" });
+  });
+
+  it("sanitises untrusted server cart data with the same rules as local state", () => {
+    const lines = sanitizeList([
+      null,
+      { productId: "p1", qty: 99, price: "invalid" },
+      { productId: "p1", qty: 2 },
+      { qty: 3 },
+    ]);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({ productId: "p1", qty: CART_MAX_QTY, price: 0 });
   });
 
   it("dedupes and caps a hostile persisted list", () => {

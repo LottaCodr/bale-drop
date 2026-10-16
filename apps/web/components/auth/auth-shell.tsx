@@ -1,4 +1,4 @@
-import { Package } from "lucide-react";
+import Image from "next/image";
 import type { ReactNode } from "react";
 
 /** Shared frame for auth screens: brand mark, heading, helper text. */
@@ -6,8 +6,8 @@ export function AuthShell({ title, subtitle, children }: { title: string; subtit
   return (
     <div className="container max-w-md py-10">
       <div className="mb-6 text-center">
-        <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
-          <Package className="h-6 w-6" aria-hidden="true" />
+        <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white">
+          <Image src="/bale-logo/bale-favicon.jpeg" alt="" width={31} height={40} />
         </span>
         <h1 className="mt-3 text-2xl font-extrabold tracking-tight">{title}</h1>
         {subtitle && <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>}

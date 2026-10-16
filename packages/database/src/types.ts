@@ -23,14 +23,14 @@ export interface Database {
   public: {
     Tables: {
       profiles: {
-        Row: { id: string; role: Role; full_name: string | null; phone: string | null; city: string | null; avatar_url: string | null; created_at: string; updated_at: string };
-        Insert: { id: string; role?: Role; full_name?: string | null; phone?: string | null; city?: string | null; avatar_url?: string | null; created_at?: string; updated_at?: string };
-        Update: { role?: Role; full_name?: string | null; phone?: string | null; city?: string | null; avatar_url?: string | null; updated_at?: string };
+        Row: { id: string; role: Role; full_name: string | null; phone: string | null; city: string | null; avatar_url: string | null; cart: Json | null; created_at: string; updated_at: string };
+        Insert: { id: string; role?: Role; full_name?: string | null; phone?: string | null; city?: string | null; avatar_url?: string | null; cart?: Json | null; created_at?: string; updated_at?: string };
+        Update: { role?: Role; full_name?: string | null; phone?: string | null; city?: string | null; avatar_url?: string | null; cart?: Json | null; updated_at?: string };
         Relationships: [];
       };
       vendor_profiles: {
-        Row: { id: string; profile_id: string; shop_name: string; city: string | null; market_address: string | null; verification_status: VerificationStatus; rejection_reason: string | null; bank_code: string | null; account_number: string | null; account_name: string | null; paystack_recipient_code: string | null; subscription_plan: string; subscription_status: string; strikes: number; inspected_at: string | null; rating_avg: number; reviews_count: number; sales_count: number; created_at: string; updated_at: string };
-        Insert: { id?: string; profile_id: string; shop_name: string; city?: string | null; market_address?: string | null; verification_status?: VerificationStatus; rejection_reason?: string | null; bank_code?: string | null; account_number?: string | null; account_name?: string | null; paystack_recipient_code?: string | null; subscription_plan?: string; subscription_status?: string; strikes?: number; inspected_at?: string | null; rating_avg?: number; reviews_count?: number; sales_count?: number; created_at?: string; updated_at?: string };
+        Row: { id: string; profile_id: string; shop_name: string; city: string | null; market_address: string | null; verification_status: VerificationStatus; rejection_reason: string | null; bank_code: string | null; account_number: string | null; account_name: string | null; paystack_recipient_code: string | null; subaccount_code: string | null; settlement_schedule: "automatic" | "manual"; subscription_plan: string; subscription_status: string; strikes: number; inspected_at: string | null; rating_avg: number; reviews_count: number; sales_count: number; created_at: string; updated_at: string };
+        Insert: { id?: string; profile_id: string; shop_name: string; city?: string | null; market_address?: string | null; verification_status?: VerificationStatus; rejection_reason?: string | null; bank_code?: string | null; account_number?: string | null; account_name?: string | null; paystack_recipient_code?: string | null; subaccount_code?: string | null; settlement_schedule?: "automatic" | "manual"; subscription_plan?: string; subscription_status?: string; strikes?: number; inspected_at?: string | null; rating_avg?: number; reviews_count?: number; sales_count?: number; created_at?: string; updated_at?: string };
         Update: Partial<Database["public"]["Tables"]["vendor_profiles"]["Insert"]>;
         Relationships: [];
       };
@@ -159,6 +159,48 @@ export interface Database {
         Row: { id: string; profile_id: string; product_id: string; created_at: string };
         Insert: { id?: string; profile_id: string; product_id: string; created_at?: string };
         Update: Partial<Database["public"]["Tables"]["wishlists"]["Insert"]>;
+        Relationships: [];
+      };
+      /** Cross-device saved filters (migration 0034). */
+      saved_searches: {
+        Row: { id: string; profile_id: string; name: string; query_json: Json; active: boolean; created_at: string; updated_at: string };
+        Insert: { id?: string; profile_id: string; name?: string; query_json?: Json; active?: boolean; created_at?: string; updated_at?: string };
+        Update: Partial<Database["public"]["Tables"]["saved_searches"]["Insert"]>;
+        Relationships: [];
+      };
+      /** Photos attached to buyer reviews (migration 0035). */
+      review_photos: {
+        Row: { id: string; review_id: string; storage_path: string; created_at: string };
+        Insert: { id?: string; review_id: string; storage_path: string; created_at?: string };
+        Update: Partial<Database["public"]["Tables"]["review_photos"]["Insert"]>;
+        Relationships: [];
+      };
+      /** Vendor response to a review (migration 0035). */
+      review_replies: {
+        Row: { id: string; review_id: string; vendor_id: string; body: string; created_at: string; updated_at: string };
+        Insert: { id?: string; review_id: string; vendor_id: string; body: string; created_at?: string; updated_at?: string };
+        Update: Partial<Database["public"]["Tables"]["review_replies"]["Insert"]>;
+        Relationships: [];
+      };
+      /** Shareable buyer codes (migration 0036). */
+      referral_codes: {
+        Row: { id: string; profile_id: string; code: string; active: boolean; created_at: string };
+        Insert: { id?: string; profile_id: string; code: string; active?: boolean; created_at?: string };
+        Update: Partial<Database["public"]["Tables"]["referral_codes"]["Insert"]>;
+        Relationships: [];
+      };
+      /** Product availability notifications (migration 0040). */
+      waitlists: {
+        Row: { id: string; profile_id: string; product_id: string; created_at: string };
+        Insert: { id?: string; profile_id: string; product_id: string; created_at?: string };
+        Update: Partial<Database["public"]["Tables"]["waitlists"]["Insert"]>;
+        Relationships: [];
+      };
+      /** Buyer return requests (migration 0042). */
+      return_requests: {
+        Row: { id: string; order_id: string; buyer_id: string; reason: string; status: "pending" | "approved" | "rejected" | "completed"; created_at: string; updated_at: string };
+        Insert: { id?: string; order_id: string; buyer_id: string; reason: string; status?: "pending" | "approved" | "rejected" | "completed"; created_at?: string; updated_at?: string };
+        Update: Partial<Database["public"]["Tables"]["return_requests"]["Insert"]>;
         Relationships: [];
       };
       /** First-party funnel events (migration 0018). Insert-only for clients. */
