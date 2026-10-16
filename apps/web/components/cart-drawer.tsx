@@ -121,7 +121,6 @@ export function CartDrawer() {
                             <QtyStepper
                               value={line.qty}
                               onChange={(next) => setQty(line.productId, next)}
-                              size="sm"
                             />
                             <span className="text-[11px] text-muted-foreground tabular-nums">{naira(line.price)} each</span>
                           </div>
