@@ -69,7 +69,7 @@ export function supabaseAdmin(): DbClient {
   return createClient<Database>(url, key, { auth: { persistSession: false } });
 }
 
-export type { Database, DbClient } from "./types";
+export type { Database, DbClient, Json } from "./types";
 export * from "./domain";
 export * from "./queries";
 export * from "./search";

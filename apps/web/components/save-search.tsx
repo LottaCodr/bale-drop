@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { ProductFilters } from "@bale-drop/database";
+import type { Json, ProductFilters } from "@bale-drop/database";
 import { BookmarkPlus } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase";
 import { isSupabaseLive } from "@/lib/config";
@@ -19,7 +19,7 @@ export function SaveSearchButton({ queryJson }: { queryJson: ProductFilters }) {
       await sb.from("saved_searches").insert({
         profile_id: userData.user.id,
         name: JSON.stringify(queryJson).slice(0, 60) || "Saved search",
-        query_json: { ...queryJson },
+        query_json: queryJson as unknown as Json,
         active: true,
       });
       setSaved(true);
